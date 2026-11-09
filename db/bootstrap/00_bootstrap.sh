@@ -110,6 +110,18 @@ REVOKE EXECUTE ON FUNCTION pg_catalog.pg_terminate_backend(integer, bigint) FROM
 REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_get_backend_idset() FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_get_backend_pid(integer) FROM PUBLIC;
 
+-- set_config is the only way a SELECT can change a setting. Without these two
+-- lines, model SQL that slipped past the validator could lift its own
+-- work_mem, idle_in_transaction_session_timeout, statement_timeout or
+-- lock_timeout for the session (ADR 0002, gap check). Granted back only to:
+--   mcp_rls_helper: owns the SECURITY DEFINER ctx.set_context(), which sets
+--                   mcpguard.ctx (and nothing else) for the executor.
+-- Not granted to mcp_migrator (no migration or script calls it; run pg_dump,
+-- which does, as the superuser), mcp_reader or mcp_auditor.
+-- db/upgrade/001_revoke_set_config.sh applies the same to existing databases.
+REVOKE EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO mcp_rls_helper;
+
 -- Large objects are the one storage write that needs no table grant. Remove
 -- the functions that create, modify or delete them.
 REVOKE EXECUTE ON FUNCTION

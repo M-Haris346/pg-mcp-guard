@@ -91,7 +91,7 @@ def test_no_context_sees_nothing(reader: psycopg.Connection[Any], relation: str)
 
 def test_context_is_transaction_local(reader: psycopg.Connection[Any], token: TokenFactory) -> None:
     with reader.transaction():
-        reader.execute("SELECT set_config('mcpguard.ctx', %s, true)", (token(ACME, ALICE),))
+        reader.execute("SELECT ctx.set_context(%s)", (token(ACME, ALICE),))
         assert reader.execute("SELECT count(*) FROM shop.orders").fetchone() != (0,)
 
     # Same connection, next transaction: the context is gone.
@@ -138,8 +138,8 @@ FORGERY_NAMES = list(_forgeries(b"k" * 32))
 def test_forged_context_sees_nothing_and_does_not_error(
     reader: psycopg.Connection[Any], context_key: bytes, forgery: str, relation: str
 ) -> None:
-    # This is the attack rule 4 exists for: model-written SQL calling
-    # set_config('mcpguard.ctx', ...) itself. query_as does exactly that,
+    # This is the attack rule 4 exists for: model-written SQL setting the
+    # context itself, via ctx.set_context (set_config is revoked). query_as does that,
     # as mcp_reader, with no validator in the way.
     forged = _forgeries(context_key)[forgery]
     assert query_as(reader, forged, EXPOSED[relation]) == []

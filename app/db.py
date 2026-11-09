@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, sql
 from psycopg_pool import AsyncConnectionPool
 
 from app.auth import Principal
@@ -28,19 +28,35 @@ from app.context import sign_context
 Conn = AsyncConnection[tuple[Any, ...]]
 Pool = AsyncConnectionPool[Conn]
 
-# set_config(name, value, true) is exactly SET LOCAL, but takes bind
-# parameters; SET does not. The context token must only ever travel as a bind
-# parameter (rule 4), so all transaction-local settings use this form.
-# client_connection_check_interval: if the executor closes the connection
-# (hard deadline backstop), the backend notices within a second instead of
-# running on until statement_timeout.
-SET_LOCALS_SQL = (
-    "SELECT set_config('mcpguard.ctx', %s, true),"
-    " set_config('statement_timeout', %s, true),"
-    " set_config('lock_timeout', %s, true),"
-    " set_config('search_path', 'shop', true),"
-    " set_config('client_connection_check_interval', '1000ms', true)"
-)
+# The signed context: set through ctx.set_context (migration 007), a SECURITY
+# DEFINER function that sets mcpguard.ctx and nothing else. mcp_reader may not
+# call set_config itself (bootstrap), so model SQL cannot change any setting.
+# The token is only ever a bind parameter (rule 4).
+SET_CONTEXT_SQL = "SELECT ctx.set_context(%s)"
+
+
+def set_local_limits_sql(limits: Limits) -> sql.Composed:
+    """SET LOCAL for the per-query limits, from validated positive integers only.
+
+    client_connection_check_interval: if the executor closes the connection
+    (hard deadline backstop), the backend notices within a second instead of
+    running on until statement_timeout.
+    """
+    values = {
+        "statement_timeout": limits.statement_timeout_ms,
+        "lock_timeout": limits.lock_timeout_ms,
+        "client_connection_check_interval": 1000,
+    }
+    for name, value in values.items():
+        # bool is an int subclass: refuse it explicitly.
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer (milliseconds)")
+    statements: list[sql.Composable] = [
+        sql.SQL("SET LOCAL {} = {}").format(sql.Identifier(name), sql.Literal(value))
+        for name, value in values.items()
+    ]
+    statements.append(sql.SQL("SET LOCAL search_path = shop"))
+    return sql.SQL("; ").join(statements)
 
 
 @dataclass
@@ -124,8 +140,7 @@ async def read_only_transaction(
     """BEGIN READ ONLY, set the signed context and limits, always ROLLBACK."""
     token = sign_context(tenant_id=principal.tenant_id, user_id=principal.user_id, key=context_key)
     async with conn.transaction(force_rollback=True):
-        await conn.execute(
-            SET_LOCALS_SQL,
-            (token, f"{limits.statement_timeout_ms}ms", f"{limits.lock_timeout_ms}ms"),
-        )
+        # No parameters: one simple-protocol round trip for all four SETs.
+        await conn.execute(set_local_limits_sql(limits))
+        await conn.execute(SET_CONTEXT_SQL, (token,))
         yield conn

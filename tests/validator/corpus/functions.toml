@@ -27,15 +27,15 @@ id = "set_config_statement_timeout_session"
 sql = '''SELECT set_config('statement_timeout','0',false)'''
 verdict = "reject"
 reason = "function_not_allowed: set_config"
-db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
-note = "with the validator on, the Phase 1 known gap is closed at this layer"
+db_test = "test_reader_sql_cannot_change_its_own_settings"
+note = "also closed at the DB layer: set_config is revoked from the reader"
 
 [[case]]
 id = "set_config_statement_timeout_local"
 sql = '''SELECT set_config('statement_timeout', '0', true)'''
 verdict = "reject"
 reason = "function_not_allowed: set_config"
-db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+db_test = "test_reader_sql_cannot_change_its_own_settings"
 
 [[case]]
 id = "set_config_temp_file_limit"
@@ -220,6 +220,20 @@ sql = 'SELECT private.current_tenant_id()'
 verdict = "reject"
 reason = "function_not_allowed: private.current_tenant_id"
 db_test = "test_reader_can_call_the_context_helper"
+
+[[case]]
+id = "context_helper_new_schema"
+sql = 'SELECT ctx.current_tenant_id()'
+verdict = "reject"
+reason = "function_not_allowed: ctx.current_tenant_id"
+
+[[case]]
+id = "context_setter"
+sql = '''SELECT ctx.set_context('v1.forged')'''
+verdict = "reject"
+reason = "function_not_allowed: ctx.set_context"
+db_test = "test_forged_context_sees_nothing_and_does_not_error"
+note = "the DB still rejects a forged token set this way"
 
 [[case]]
 id = "pgcrypto_hmac"

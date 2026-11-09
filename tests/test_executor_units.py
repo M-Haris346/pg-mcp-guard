@@ -11,6 +11,8 @@ import pytest
 from psycopg import errors
 from psycopg_pool import PoolTimeout
 
+from app.config import Limits
+from app.db import set_local_limits_sql
 from app.executor import audit_sql_text, map_db_error, serialize_row, to_json_value
 
 
@@ -117,3 +119,34 @@ def test_query_error_detail_is_scrubbed(
 def test_audit_sql_text_escapes_nul_and_is_bounded() -> None:
     assert audit_sql_text("SELECT 1\x00; DROP") == "SELECT 1\\x00; DROP"
     assert len(audit_sql_text("x" * 50_000)) == 20_000
+
+
+@pytest.mark.parametrize(
+    ("message", "reason"),
+    [
+        ("permission denied for function set_config", "function_not_allowed: set_config"),
+        ("permission denied for function lo_create", "function_not_allowed: lo_create"),
+        ("permission denied for table customers", "column_not_allowed"),
+        ("permission denied for schema private", "column_not_allowed"),
+    ],
+)
+def test_insufficient_privilege_names_a_revoked_function(
+    message: str, reason: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Diag:
+        message_primary = message
+
+    monkeypatch.setattr(errors.InsufficientPrivilege, "diag", property(lambda self: Diag()))
+    assert map_db_error(errors.InsufficientPrivilege(message)) == reason
+
+
+def test_set_local_limits_are_built_from_positive_integers_only() -> None:
+    rendered = repr(set_local_limits_sql(Limits(statement_timeout_ms=2500, lock_timeout_ms=700)))
+    assert "statement_timeout" in rendered and "2500" in rendered and "700" in rendered
+    for bad in (0, -1, True, 1.5, "3000"):
+        # Bypass Limits' own validation to reach the SQL builder's check.
+        limits = object.__new__(Limits)
+        object.__setattr__(limits, "statement_timeout_ms", bad)
+        object.__setattr__(limits, "lock_timeout_ms", 1000)
+        with pytest.raises(ValueError, match="positive integer"):
+            set_local_limits_sql(limits)

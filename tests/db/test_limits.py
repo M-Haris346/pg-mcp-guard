@@ -46,24 +46,6 @@ def test_temp_file_limit_holds_even_after_reader_disables_statement_timeout(
         reader.execute("SELECT md5(g::text) AS h FROM generate_series(1, 20000000) AS g ORDER BY h")
 
 
-@pytest.mark.known_gap
-def test_known_gap_reader_can_change_its_own_statement_timeout(
-    reader: psycopg.Connection[Any],
-) -> None:
-    """KNOWN GAP (ADR 0002): statement_timeout is user-settable. With the
-    validator off, a CPU-only query (no temp files) after SET statement_timeout
-    = 0 is unbounded at the database layer. Mitigated in Phase 3 by a
-    client-side deadline + query cancel, and by the validator rejecting SET /
-    set_config. This test passes while the gap exists; if Postgres ever
-    refuses the SET, it fails and the ADR should be revisited."""
-    reader.execute("SET statement_timeout = 0")
-    assert reader.execute("SHOW statement_timeout").fetchone() == ("0",)
-
-    with reader.transaction():
-        reader.execute("SELECT set_config('statement_timeout', '0', true)")
-        assert reader.execute("SHOW statement_timeout").fetchone() == ("0",)
-
-
 def test_connection_limit(reader_url: str, migrator: psycopg.Connection[Any]) -> None:
     limit_row = migrator.execute(
         "SELECT rolconnlimit FROM pg_roles WHERE rolname = 'mcp_reader'"

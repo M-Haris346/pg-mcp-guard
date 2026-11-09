@@ -1,10 +1,10 @@
 """Connections are reset with DISCARD ALL when they go back to the pool.
 
-Model SQL (validator OFF) leaves session state behind. Two kinds:
-- Session GUCs set with set_config(..., false): the executor always ends with
-  ROLLBACK, and Postgres undoes GUC changes made in a rolled-back transaction,
-  so these do not survive even without the reset (checked below).
+Model SQL (validator OFF) can leave session state behind:
 - Session advisory locks: ROLLBACK does not release them. Only DISCARD ALL does.
+- Settings: model SQL cannot change any (set_config is revoked from the reader,
+  tests/db/test_set_config.py); and Postgres would undo changes made in the
+  rolled-back transaction anyway. The session is checked for them all the same.
 """
 
 from __future__ import annotations
@@ -14,11 +14,7 @@ from typing import Any
 from app.executor import Executor, QueryResult
 from tests.support import ALICE_AT_ACME, ExecutorFactory, allow_all
 
-LEAVE_STATE_BEHIND = (
-    "SELECT pg_backend_pid(), set_config('statement_timeout', '0', false),"
-    " set_config('mcpguard.ctx', 'left-behind', false),"
-    " set_config('search_path', 'pg_catalog', false), pg_advisory_lock(42)"
-)
+LEAVE_STATE_BEHIND = "SELECT pg_backend_pid(), pg_advisory_lock(42)"
 
 INSPECT_SESSION = (
     "SELECT pg_backend_pid(), current_setting('statement_timeout'),"
@@ -56,4 +52,4 @@ async def test_without_the_reset_the_advisory_lock_leaks(make_executor: Executor
     state = await _leave_state_and_inspect(executor)
 
     assert state[3] == 1  # the next principal would inherit the lock
-    assert state[:3] == ("5s", "", "shop")  # GUCs: undone by the ROLLBACK
+    assert state[:3] == ("5s", "", "shop")  # settings: untouched

@@ -27,9 +27,12 @@ def query_as(
 ) -> list[tuple[Any, ...]]:
     """Run sql in one transaction, with mcpguard.ctx set to ctx (if not None).
 
+    Uses ctx.set_context, the only way the reader can set it (it may not call
+    set_config). Model SQL could call it too, so forged tokens go through here.
+
     The token goes in as a bind parameter, never into the SQL text.
     """
     with conn.transaction():
         if ctx is not None:
-            conn.execute("SELECT set_config('mcpguard.ctx', %s, true)", (ctx,))
+            conn.execute("SELECT ctx.set_context(%s)", (ctx,))
         return conn.execute(sql).fetchall()

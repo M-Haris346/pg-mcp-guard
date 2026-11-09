@@ -52,7 +52,7 @@ def test_sensitive_customer_columns_are_denied(
     [
         ("SELECT * FROM shop.users", "permission denied for table users"),
         ("SELECT * FROM shop.memberships", "permission denied for table memberships"),
-        ("SELECT * FROM private.context_key", "permission denied for table context_key"),
+        ("SELECT * FROM private.context_key", "permission denied for schema private"),
         ("SELECT * FROM audit.tool_calls", "permission denied for schema audit"),
         ("SELECT ext.hmac('a', 'b', 'sha256')", "permission denied for schema ext"),
     ],
@@ -68,7 +68,7 @@ def test_hidden_objects_are_denied(
 def test_reader_can_call_the_context_helper(reader: psycopg.Connection[Any]) -> None:
     # Policies run with the reader's privileges, so it must be able to call
     # the helper. Without a context it just returns NULL.
-    assert query_as(reader, None, "SELECT private.current_tenant_id()") == [(None,)]
+    assert query_as(reader, None, "SELECT ctx.current_tenant_id()") == [(None,)]
 
 
 # --- writes: two independent layers ----------------------------------------
@@ -198,7 +198,9 @@ def test_role_level_settings_apply_to_new_sessions(
 def test_reader_cannot_raise_temp_file_limit(reader: psycopg.Connection[Any]) -> None:
     with pytest.raises(errors.InsufficientPrivilege, match="temp_file_limit"):
         reader.execute("SET temp_file_limit = -1")
-    with pytest.raises(errors.InsufficientPrivilege, match="temp_file_limit"):
+    with pytest.raises(
+        errors.InsufficientPrivilege, match="permission denied for function set_config"
+    ):
         reader.execute("SELECT set_config('temp_file_limit', '-1', false)")
 
 
@@ -230,7 +232,7 @@ def test_reader_cannot_see_another_reader_sessions_query_or_token(
         # Victim: idle in transaction, last query contains the marker; its
         # context token was sent as a bind parameter.
         victim.execute("BEGIN")
-        victim.execute("SELECT set_config('mcpguard.ctx', %s, true)", (ctx,))
+        victim.execute("SELECT ctx.set_context(%s)", (ctx,))
         victim.execute(f"SELECT '{MARKER}'")  # noqa: S608 - constant test marker
 
         try:

@@ -71,8 +71,8 @@ async def test_query_errors_carry_the_primary_message(
 
 async def test_query_error_mentioning_internals_is_scrubbed(make_executor: ExecutorFactory) -> None:
     executor = await make_executor(validator=allow_all)
-    # 'relation "private.nope" does not exist'
-    result = await executor.run_query(ALICE_AT_ACME, "SELECT * FROM private.nope")
+    # 'relation "audit_nope" does not exist' mentions an internal marker
+    result = await executor.run_query(ALICE_AT_ACME, "SELECT * FROM audit_nope")
     assert result == ToolError("query_error")
 
 

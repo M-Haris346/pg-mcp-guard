@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import time
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
@@ -60,6 +61,7 @@ CURSOR_NAME = "mcp_query"
 # A query_error detail mentioning any of these is replaced by the bare code.
 _INTERNAL_MARKERS = ("mcp_", "mcpguard", "private", "ext.", "audit", "context_key")
 _MAX_ERROR_DETAIL = 200
+_FUNCTION_DENIED = re.compile(r"^permission denied for function (\S+)$")
 # After the query task is cancelled (hard backstop), how long to wait for it
 # before closing the connection underneath it.
 _TASK_CANCEL_WAIT_S = 1.0
@@ -155,6 +157,10 @@ class Executor:
 
         outcome = await self._audited(principal, tool, text, work)
         return outcome if isinstance(outcome, ToolError) else ToolError(reason)
+
+    async def reader_can_set_config(self) -> bool | ToolError:
+        """Startup check: True means the gap-check revoke is missing (refuse to start)."""
+        return await self._with_reader(self._set_config_privilege)
 
     async def is_member(self, principal: Principal) -> bool | ToolError:
         """Startup probe: does the signed context resolve to a tenant (membership)?"""
@@ -360,9 +366,17 @@ class Executor:
             rows = await cursor.fetchall()
         return CatalogResult(relations=relations_from_rows(rows))
 
+    async def _set_config_privilege(self, conn: Conn) -> bool:
+        cursor = await conn.execute(
+            "SELECT pg_catalog.has_function_privilege("
+            "current_user, 'pg_catalog.set_config(text,text,boolean)', 'EXECUTE')"
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
+
     async def _member(self, conn: Conn, principal: Principal) -> bool:
         async with read_only_transaction(conn, principal, self.context_key, self.limits):
-            cursor = await conn.execute("SELECT private.current_tenant_id() IS NOT NULL")
+            cursor = await conn.execute("SELECT ctx.current_tenant_id() IS NOT NULL")
             row = await cursor.fetchone()
         return bool(row and row[0])
 
@@ -515,6 +529,11 @@ def serialize_row(raw: Sequence[object], max_cell_bytes: int) -> tuple[list[JSON
 def map_db_error(exc: BaseException) -> str:
     """Map a database error to a model-readable reason. Never leaks internals."""
     if isinstance(exc, errors.InsufficientPrivilege):
+        # A revoked function (set_config, lo_*, pg_cancel_backend, ...) can only
+        # be reached with the validator off; name it like the validator would.
+        message = getattr(getattr(exc, "diag", None), "message_primary", None) or ""
+        if match := _FUNCTION_DENIED.match(message):
+            return f"function_not_allowed: {clean_detail(match.group(1))}"
         # With the validator on, column grants are the only source of 42501.
         return "column_not_allowed"
     if isinstance(exc, errors.QueryCanceled):

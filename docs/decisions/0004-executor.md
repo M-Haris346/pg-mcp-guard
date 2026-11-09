@@ -19,14 +19,15 @@ connection.
 - `BEGIN READ ONLY` is sent explicitly (psycopg `read_only=True`). The role's
   `default_transaction_read_only` is a second, independent layer, and a test turns it off to show
   the first one holds alone.
-- Transaction-local settings are applied in one statement, with every value as a bind parameter:
-  `set_config(name, value, true)` is exactly `SET LOCAL`, but `SET` cannot take parameters, and the
-  context token must travel only as a parameter (rule 4). The settings are: `mcpguard.ctx` (signed
-  token), `statement_timeout` (3 s, below the role's 5 s), `lock_timeout` (1 s),
-  `search_path = shop`, and `client_connection_check_interval = 1s`. The last one makes a backend
-  notice a closed client within a second.
-- The transaction always ends in ROLLBACK. Postgres also undoes any GUC change made in a
-  rolled-back transaction, including `set_config(..., false)`.
+- Transaction-local limits use plain `SET LOCAL`, built only from validated positive integers
+  (`app/db.py`, `set_local_limits_sql`): `statement_timeout` (3 s, below the role's 5 s),
+  `lock_timeout` (1 s), `client_connection_check_interval` (1 s, so a backend notices a closed
+  client within a second), and `search_path = shop`.
+- The signed context goes through `ctx.set_context(%s)` with the token as a **bind parameter**
+  (rule 4). Since Phase 6 the reader may not call `set_config` at all (ADR 0002, gap check), so this
+  `SECURITY DEFINER` function is the only way to set `mcpguard.ctx`, and model SQL cannot change any
+  other setting. Phases 3–5 used one `set_config(..., true)` statement with bind parameters instead.
+- The transaction always ends in ROLLBACK.
 
 **Server-side cursor, at most `max_rows + 1` rows.**
 - `DECLARE … CURSOR FOR <sql>` is always sent with the extended protocol (psycopg

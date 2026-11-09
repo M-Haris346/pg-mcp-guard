@@ -58,7 +58,7 @@ async def test_deadline_also_covers_time_between_fetches(make_executor: Executor
 
     result = await executor.run_query(
         ALICE_AT_ACME,
-        "SELECT set_config('statement_timeout', '0', true), pg_sleep(0.3)"
+        "SELECT pg_sleep(0.3)"
         " FROM (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10)) AS v(x)",
     )
 

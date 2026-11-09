@@ -9,8 +9,9 @@ and `tests/db` proves it holds with the validator switched off. The validator ex
 
 - give the model a clear, early reason (`function_not_allowed: pg_sleep`) instead of a raw
   database error;
-- close what the database layer cannot: a model with a plain connection could
-  `SET statement_timeout = 0` (ADR 0002, residual risk 3) or take session advisory locks;
+- add a second, independent refusal for what the database also blocks. Example: `SET` and
+  `set_config` (the database has refused `set_config` to the reader since Phase 6, ADR 0002) and
+  session advisory locks (released by `DISCARD ALL`);
 - shrink what reaches the database: no catalog reads, no exotic syntax.
 
 ## Decision

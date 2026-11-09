@@ -125,8 +125,8 @@ id = "set_statement_timeout_zero"
 sql = 'SET statement_timeout = 0'
 verdict = "reject"
 reason = "statement_not_allowed: SET"
-db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
-note = "with the validator on, the Phase 1 known gap is closed at this layer"
+db_test = "test_reader_sql_cannot_change_its_own_settings"
+note = "also closed at the DB layer: set_config is revoked from the reader"
 
 [[case]]
 id = "set_statement_timeout_in_attack"
@@ -191,7 +191,7 @@ id = "show"
 sql = 'SHOW statement_timeout'
 verdict = "reject"
 reason = "statement_not_allowed: SHOW"
-db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+db_test = "test_reader_sql_cannot_change_its_own_settings"
 
 [[case]]
 id = "show_read_only"

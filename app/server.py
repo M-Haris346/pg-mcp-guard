@@ -383,6 +383,28 @@ def create_server(
 # --- entry point --------------------------------------------------------------------
 
 
+async def startup_problem(executor: Executor, principal: Principal | None) -> str | None:
+    """Fail-closed checks before serving (stdio and HTTP). None means OK.
+
+    1. The reader must not be able to call set_config: without that revoke,
+       SQL that got past the validator could lift its own timeouts and
+       work_mem (ADR 0002, gap check). Checked as the reader itself.
+    2. stdio only: the token's user is a member of the token's tenant.
+    """
+    can_set = await executor.reader_can_set_config()
+    if can_set is True:
+        return "reader_can_set_config"
+    if isinstance(can_set, ToolError):
+        return f"privilege_check_failed: {can_set.reason}"
+    if principal is not None:
+        member = await executor.is_member(principal)
+        if member is False:
+            return "principal_not_a_member"
+        if isinstance(member, ToolError):
+            return f"membership_check_failed: {member.reason}"
+    return None
+
+
 def loop_factory() -> Callable[[], asyncio.AbstractEventLoop] | None:
     """psycopg's async mode cannot use Windows' default ProactorEventLoop."""
     return asyncio.SelectorEventLoop if sys.platform == "win32" else None
@@ -403,14 +425,8 @@ async def serve(settings: Settings, identity: VerifiedToken) -> int:
         executor = Executor(
             pools=pools, context_key=settings.context_key_bytes(), limits=settings.limits()
         )
-        member = await executor.is_member(identity.principal)
-        if member is not True:
-            reason = (
-                "principal_not_a_member"
-                if member is False
-                else f"membership_check_failed: {member.reason}"
-            )
-            log.error("startup_failed", reason=reason)
+        if (problem := await startup_problem(executor, identity.principal)) is not None:
+            log.error("startup_failed", reason=problem)
             return 2
         log.info(
             "server_starting",

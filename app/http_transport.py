@@ -40,7 +40,7 @@ from app.config import Settings
 from app.db import Pool, open_pools
 from app.executor import Executor, ToolError
 from app.log import get_logger
-from app.server import create_server, run
+from app.server import create_server, run, startup_problem
 
 log = get_logger("http")
 
@@ -396,6 +396,10 @@ async def serve_http(settings: Settings) -> int:
         executor = Executor(
             pools=pools, context_key=settings.context_key_bytes(), limits=settings.limits()
         )
+        # Membership is checked per request (BearerTokenVerifier), not here.
+        if (problem := await startup_problem(executor, None)) is not None:
+            log.error("startup_failed", reason=problem)
+            return 2
         verifier = BearerTokenVerifier(
             HS256Verifier(
                 settings.jwt_secret_bytes(),

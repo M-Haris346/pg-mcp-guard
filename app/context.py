@@ -1,7 +1,7 @@
 """Sign the identity context that RLS policies trust (CLAUDE.md rule 4, ADR 0002).
 
-Format, which must match private.current_tenant_id() in
-db/migrations/002_rls_helper.sql:
+Format, which must match ctx.current_tenant_id() (created in
+db/migrations/002_rls_helper.sql, moved to ctx by 007):
 
     v1.<tenant_uuid>.<user_uuid>.<exp_unix_seconds>.<hex HMAC-SHA256 of the first four parts>
 

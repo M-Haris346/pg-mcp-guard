@@ -127,7 +127,7 @@ def test_allowed_corpus_entry_runs_as_reader(
     marked enforced_by = "db" must be refused by the database instead."""
     sql = cast(LiteralString, case.sql)  # corpus files are part of this repo
     with reader.transaction():
-        reader.execute("SELECT set_config('mcpguard.ctx', %s, true)", (token(ACME, ALICE),))
+        reader.execute("SELECT ctx.set_context(%s)", (token(ACME, ALICE),))
         if case.enforced_by == "db":
             with pytest.raises(errors.InsufficientPrivilege), reader.transaction():
                 reader.execute(sql, prepare=True)
