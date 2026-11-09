@@ -36,6 +36,7 @@ This repo exists to show the layered fix, with tests for each layer.
    with a key only `mcp_rls_helper` can read, and checks expiry. Reason: model-written SQL could call
    `set_config('mcpguard.ctx', ...)` itself; an unsigned GUC would let it impersonate another tenant.
    Invalid / missing / expired context ⇒ helper returns NULL ⇒ zero rows (fail closed).
+   The context token is only ever sent as a bind parameter, never interpolated into SQL text.
 5. **Every query runs in a `READ ONLY` transaction** with `SET LOCAL statement_timeout` and
    `SET LOCAL search_path` to the exposed schema only.
 6. **Exactly one statement**, parsed with the real Postgres grammar (`pglast` / libpg_query).
@@ -89,7 +90,10 @@ shop.customers(id, tenant_id, name, country, email, phone, created_at, unique(id
 shop.products(id, tenant_id, name, category, price_cents)
 shop.orders(id, tenant_id, customer_id, status, total_cents, created_at,
        fk(customer_id, tenant_id) -> customers(id, tenant_id))
-shop.order_items(order_id, tenant_id, product_id, qty, unit_price_cents)
+shop.order_items(order_id, tenant_id, product_id, qty, unit_price_cents,
+       fk(order_id, tenant_id) -> orders(id, tenant_id),
+       fk(product_id, tenant_id) -> products(id, tenant_id))
+       -- orders and products carry unique(id, tenant_id): no cross-tenant references possible
 private.context_key(key bytea)          -- SELECT only for mcp_rls_helper
 audit.tool_calls(id bigserial, at, user_id, tenant_id, tool, sql_text, verdict, reason,
        row_count, truncated, duration_ms)   -- INSERT only for mcp_auditor
@@ -178,6 +182,15 @@ uv run python -m app.server      # stdio MCP server (for Claude Desktop / Claude
    column grants, timeout, views.
 2. Validator: pglast policy + adversarial corpus. Pure unit tests.
 3. Executor: read-only txn, bounded fetch, error mapping, audit (fail closed). Integration tests.
+   Requirements carried from Phase 1 review:
+   - Every connection is reset with `DISCARD ALL` when it goes back to the pool. Reason: model SQL
+     can set session-level state (`set_config(..., false)`, including `mcpguard.ctx`) and take
+     session advisory locks, which would otherwise reach the next principal on that connection.
+     Test it: state and advisory locks set by one principal's query are gone for the next.
+   - Model SQL always runs via the extended protocol (bind params / `prepare=True`), which refuses
+     multi-statement strings; the simple protocol does not.
+   - Client-side deadline + server-side query cancel, because the reader can lower its own
+     `statement_timeout` (known gap, ADR 0002).
 4. MCP server over stdio: three tools, startup token verification, in-memory client tests,
    Claude Desktop / Code config example.
 5. Streamable HTTP + per-request bearer JWT (two principals, one process, isolation test).

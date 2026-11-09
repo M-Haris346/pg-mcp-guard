@@ -24,6 +24,15 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 2s --health-timeout 3s --health-retries 30
 
+    env:
+      # Throwaway credentials for the ephemeral CI database only.
+      MCP_MIGRATOR_PASSWORD: migrator-ci-only
+      MCP_READER_PASSWORD: reader-ci-only
+      MCP_AUDITOR_PASSWORD: auditor-ci-only
+      TEST_MIGRATOR_DATABASE_URL: postgresql://mcp_migrator:migrator-ci-only@127.0.0.1:5432/mcpguard_test
+      TEST_READER_DATABASE_URL: postgresql://mcp_reader:reader-ci-only@127.0.0.1:5432/mcpguard_test
+      TEST_AUDITOR_DATABASE_URL: postgresql://mcp_auditor:auditor-ci-only@127.0.0.1:5432/mcpguard_test
+
     steps:
       # Pinned to full commit SHAs (a tag can be moved; a SHA cannot).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +52,15 @@ jobs:
       - name: Type check
         run: uv run mypy app
 
-      # Bootstrap + migrations are added in Phase 1.
+      # Service containers cannot mount /docker-entrypoint-initdb.d, so run the
+      # same bootstrap script directly as the superuser. The test suite then
+      # migrates and seeds mcpguard_test itself.
+      - name: Bootstrap database roles
+        env:
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+          PGPASSWORD: postgres-ci-only
+        run: bash db/bootstrap/00_bootstrap.sh
 
       - name: Test
         run: uv run pytest -v

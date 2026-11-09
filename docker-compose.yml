@@ -7,6 +7,10 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Read by db/bootstrap/00_bootstrap.sh on first start.
+      MCP_MIGRATOR_PASSWORD: ${MCP_MIGRATOR_PASSWORD:?set MCP_MIGRATOR_PASSWORD in .env}
+      MCP_READER_PASSWORD: ${MCP_READER_PASSWORD:?set MCP_READER_PASSWORD in .env}
+      MCP_AUDITOR_PASSWORD: ${MCP_AUDITOR_PASSWORD:?set MCP_AUDITOR_PASSWORD in .env}
     ports:
       # Loopback only: the dev database is never reachable from the network.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -14,7 +18,7 @@ services:
       # PG 18 images keep data in /var/lib/postgresql/18/docker; mount the parent
       # so a future major upgrade can live alongside it.
       - pgdata:/var/lib/postgresql
-      # Runs only when the data volume is empty (first start). Filled in Phase 1.
+      # Runs only when the data volume is empty (first start).
       - ./db/bootstrap:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]

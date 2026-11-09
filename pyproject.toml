@@ -53,3 +53,6 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "known_gap: documents a residual risk that exists at this layer (see ADR 0002); passes while the gap exists",
+]
