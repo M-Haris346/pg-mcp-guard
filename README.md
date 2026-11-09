@@ -50,9 +50,21 @@ disabled to show the database holds on its own.
   - Every allowed corpus query is also run against the real database as `mcp_reader`.
   - Deeply nested input is rejected without crashing the process.
 
+- Phase 3 executor (`app/executor.py`, [ADR 0004](docs/decisions/0004-executor.md)). Integration
+  tests in `tests/executor/`, many of them with the validator off:
+  - validation off the event loop;
+  - an explicit `READ ONLY` transaction with transaction-local limits;
+  - the signed context sent only as a bind parameter;
+  - model SQL only through a server-side cursor (extended protocol);
+  - at most `max_rows + 1` rows fetched, plus cell and response byte caps, with strict-JSON values;
+  - a client-side deadline with server-side cancel and a hard backstop, and connections that saw
+    a cancel are never reused;
+  - `DISCARD ALL` on pool return;
+  - database errors mapped to model-readable reasons with no internals;
+  - an audit row for every call; if the audit write fails, no result is returned.
+
 ## Planned
 
-3. Executor: read-only transaction, bounded fetch, error mapping, fail-closed audit.
 4. MCP server over stdio: `list_tables`, `describe_table`, `run_query`.
 5. Streamable HTTP with per-request bearer JWT.
 6. Threat model, ADRs, demo.

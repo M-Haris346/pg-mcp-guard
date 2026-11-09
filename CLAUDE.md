@@ -195,5 +195,8 @@ uv run python -m app.server      # stdio MCP server (for Claude Desktop / Claude
      from async code with `asyncio.to_thread(validate, sql)`, never directly on the event loop.
 4. MCP server over stdio: three tools, startup token verification, in-memory client tests,
    Claude Desktop / Code config example.
+   Requirement carried from Phase 3: psycopg's async mode cannot use Windows' default
+   `ProactorEventLoop`. The server entry point must run on a `SelectorEventLoop` (tests already do,
+   via `pytest_asyncio_loop_factories` in `tests/conftest.py`).
 5. Streamable HTTP + per-request bearer JWT (two principals, one process, isolation test).
 6. Docs + demo: ADRs, threat model, README with Mermaid diagrams, `scripts/demo.py`, demo video.

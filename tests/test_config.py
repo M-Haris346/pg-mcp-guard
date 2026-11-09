@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.config import Settings
+from app.config import Limits, Settings
 
 VALID_KEY = "ab" * 32  # 32 bytes, hex
 
@@ -65,3 +65,39 @@ def test_required_values_have_no_default(monkeypatch: pytest.MonkeyPatch, var: s
 
 def test_secrets_are_not_in_repr() -> None:
     assert VALID_KEY not in repr(_settings())
+
+
+def test_default_limits() -> None:
+    limits = _settings().limits()
+    assert limits == Limits()
+    assert limits.deadline_ms > limits.statement_timeout_ms
+
+
+@pytest.mark.parametrize(
+    ("env", "message"),
+    [
+        ({"QUERY_DEADLINE_MS": "3000"}, "must be greater than QUERY_STATEMENT_TIMEOUT_MS"),
+        (
+            {"QUERY_STATEMENT_TIMEOUT_MS": "5000", "QUERY_DEADLINE_MS": "6000"},
+            "below the role statement_timeout",
+        ),
+        ({"MAX_ROWS": "0"}, "max_rows must be positive"),
+        ({"MAX_CELL_BYTES": "0"}, "max_cell_bytes must be positive"),
+        ({"MAX_RESPONSE_BYTES": "100"}, "max_cell_bytes must not exceed max_response_bytes"),
+        ({"QUERY_CANCEL_GRACE_MS": "0"}, "cancel_grace_ms must be positive"),
+        ({"READER_POOL_MAX": "10"}, "READER_POOL_MAX"),
+        ({"AUDITOR_POOL_MAX": "0"}, "AUDITOR_POOL_MAX"),
+    ],
+)
+def test_rejects_inconsistent_limits(
+    monkeypatch: pytest.MonkeyPatch, env: dict[str, str], message: str
+) -> None:
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(ValidationError, match=message):
+        _settings()
+
+
+def test_limits_reject_non_positive_values() -> None:
+    with pytest.raises(ValueError, match="fetch_batch_rows must be positive"):
+        Limits(fetch_batch_rows=0)
