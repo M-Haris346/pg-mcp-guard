@@ -1,0 +1,192 @@
+# Operators and syntax outside the allowlists.
+
+[[case]]
+id = "regex_match"
+sql = '''SELECT * FROM customers WHERE name ~ '^(a+)+$' '''
+verdict = "reject"
+reason = "operator_not_allowed: ~"
+note = "regex: ReDoS risk"
+
+[[case]]
+id = "regex_match_case_insensitive"
+sql = '''SELECT * FROM customers WHERE name ~* 'a' '''
+verdict = "reject"
+reason = "operator_not_allowed: ~*"
+
+[[case]]
+id = "regex_not_match"
+sql = '''SELECT * FROM customers WHERE name !~ 'a' '''
+verdict = "reject"
+reason = "operator_not_allowed: !~"
+
+[[case]]
+id = "similar_to"
+sql = '''SELECT * FROM customers WHERE name SIMILAR TO '(a+)+' '''
+verdict = "reject"
+reason = "operator_not_allowed: SIMILAR TO"
+
+[[case]]
+id = "qualified_regex_operator"
+sql = '''SELECT * FROM customers WHERE name OPERATOR(pg_catalog.~) 'a' '''
+verdict = "reject"
+reason = "operator_not_allowed: pg_catalog.~"
+
+[[case]]
+id = "operator_in_other_schema"
+sql = 'SELECT 1 OPERATOR(shop.+) 1'
+verdict = "reject"
+reason = "operator_not_allowed: shop.+"
+
+[[case]]
+id = "order_by_using_custom_operator"
+sql = 'SELECT name FROM customers ORDER BY name USING ~<~'
+verdict = "reject"
+reason = "operator_not_allowed: ~<~"
+note = "ORDER BY ... USING names an operator too"
+
+[[case]]
+id = "regex_in_any"
+sql = '''SELECT 1 WHERE 'a' ~ ANY (ARRAY['a'])'''
+verdict = "reject"
+reason = "operator_not_allowed: ~"
+
+[[case]]
+id = "regex_in_any_sublink"
+sql = '''SELECT 1 WHERE 'a' ~ ANY (SELECT name FROM customers)'''
+verdict = "reject"
+reason = "operator_not_allowed: ~"
+
+[[case]]
+id = "full_text_match"
+sql = '''SELECT to_tsvector('a') @@ 'a' '''
+verdict = "reject"
+reason = "operator_not_allowed: @@"
+
+[[case]]
+id = "jsonb_arrow"
+sql = '''SELECT '{}'::jsonb -> 'a' '''
+verdict = "reject"
+reason = "operator_not_allowed: ->"
+
+[[case]]
+id = "exponent"
+sql = 'SELECT 2 ^ 1000'
+verdict = "reject"
+reason = "operator_not_allowed: ^"
+
+[[case]]
+id = "bit_shift"
+sql = 'SELECT 1 << 62'
+verdict = "reject"
+reason = "operator_not_allowed: <<"
+
+[[case]]
+id = "parameter_placeholder"
+sql = 'SELECT $1'
+verdict = "reject"
+reason = "syntax_not_allowed: ParamRef"
+
+[[case]]
+id = "collate"
+sql = 'SELECT name COLLATE "C" FROM customers'
+verdict = "reject"
+reason = "syntax_not_allowed: CollateClause"
+
+[[case]]
+id = "tablesample"
+sql = 'SELECT * FROM orders TABLESAMPLE SYSTEM (50)'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeTableSample"
+
+[[case]]
+id = "function_in_from"
+sql = 'SELECT * FROM generate_series(1, 10)'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+
+[[case]]
+id = "unnest_in_from"
+sql = 'SELECT * FROM unnest(ARRAY[1, 2])'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+
+[[case]]
+id = "rows_from"
+sql = 'SELECT * FROM ROWS FROM (generate_series(1, 2))'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+
+[[case]]
+id = "lateral_function"
+sql = 'SELECT * FROM orders o, LATERAL generate_series(1, o.total_cents)'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+
+[[case]]
+id = "field_selection"
+sql = 'SELECT (c).name FROM customers c'
+verdict = "reject"
+reason = "syntax_not_allowed: A_Indirection"
+
+[[case]]
+id = "array_subscript"
+sql = 'SELECT (ARRAY[1, 2])[1]'
+verdict = "reject"
+reason = "syntax_not_allowed: A_Indirection"
+
+[[case]]
+id = "xmltable"
+sql = '''SELECT * FROM XMLTABLE('/r' PASSING '<r/>' COLUMNS a int)'''
+verdict = "reject"
+reason = "syntax_not_allowed: RangeTableFunc"
+
+[[case]]
+id = "json_table"
+sql = '''SELECT * FROM JSON_TABLE('[]', '$' COLUMNS (a int))'''
+verdict = "reject"
+reason = "syntax_not_allowed: JsonTable"
+
+[[case]]
+id = "xmlelement"
+sql = 'SELECT xmlelement(name a)'
+verdict = "reject"
+reason = "syntax_not_allowed: XmlExpr"
+
+[[case]]
+id = "json_object_constructor"
+sql = '''SELECT json_object('a': 1)'''
+verdict = "reject"
+reason = "syntax_not_allowed"
+
+[[case]]
+id = "is_json"
+sql = '''SELECT 'x' IS JSON'''
+verdict = "reject"
+reason = "syntax_not_allowed"
+
+[[case]]
+id = "grouping_function"
+sql = 'SELECT GROUPING(status) FROM orders GROUP BY ROLLUP (status)'
+verdict = "reject"
+reason = "syntax_not_allowed: GroupingFunc"
+
+[[case]]
+id = "qualified_plus"
+sql = 'SELECT 1 OPERATOR(pg_catalog.+) 1'
+verdict = "allow"
+
+[[case]]
+id = "order_by_using_less_than"
+sql = 'SELECT name FROM customers ORDER BY name USING <'
+verdict = "allow"
+
+[[case]]
+id = "like_family"
+sql = '''SELECT name FROM customers WHERE name LIKE 'N%' OR name ILIKE '%inc' OR name NOT LIKE 'x%' OR name NOT ILIKE 'y%' '''
+verdict = "allow"
+
+[[case]]
+id = "like_operators_spelled_out"
+sql = '''SELECT name FROM customers WHERE name ~~ 'N%' OR name !~~* 'x%' '''
+verdict = "allow"
+note = "~~ is how Postgres spells LIKE"

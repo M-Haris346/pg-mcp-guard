@@ -25,6 +25,7 @@ def test_granted_customer_columns_are_readable(
     assert rows  # search_path = shop comes from the role setting
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "sql",
     [
@@ -45,6 +46,7 @@ def test_sensitive_customer_columns_are_denied(
 # --- objects the reader must not touch -----------------------------------
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     ("sql", "message"),
     [
@@ -62,6 +64,7 @@ def test_hidden_objects_are_denied(
         query_as(reader, None, sql)
 
 
+@pytest.mark.attack
 def test_reader_can_call_the_context_helper(reader: psycopg.Connection[Any]) -> None:
     # Policies run with the reader's privileges, so it must be able to call
     # the helper. Without a context it just returns NULL.
@@ -82,6 +85,7 @@ def test_default_transaction_is_read_only(reader: psycopg.Connection[Any]) -> No
     assert query_as(reader, None, "SHOW transaction_read_only") == [("on",)]
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize("sql", WRITES)
 def test_writes_fail_in_the_default_read_only_transaction(
     reader: psycopg.Connection[Any], sql: LiteralString
@@ -90,6 +94,7 @@ def test_writes_fail_in_the_default_read_only_transaction(
         query_as(reader, None, sql)
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "sql",
     [
@@ -117,6 +122,7 @@ def test_writes_still_fail_on_privileges_in_a_read_write_transaction(
 # --- the Datadog case: multi-statement escape -------------------------------
 
 
+@pytest.mark.attack
 def test_extended_protocol_refuses_multiple_statements(reader: psycopg.Connection[Any]) -> None:
     """Driver layer: with parameters or prepare=True, psycopg uses the extended
     protocol, and Postgres refuses more than one statement. The Phase 3 executor
@@ -125,6 +131,7 @@ def test_extended_protocol_refuses_multiple_statements(reader: psycopg.Connectio
         reader.execute("SELECT 1; SELECT 2", prepare=True)
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "attack",
     [
@@ -187,6 +194,7 @@ def test_role_level_settings_apply_to_new_sessions(
     assert row == (expected,)
 
 
+@pytest.mark.attack
 def test_reader_cannot_raise_temp_file_limit(reader: psycopg.Connection[Any]) -> None:
     with pytest.raises(errors.InsufficientPrivilege, match="temp_file_limit"):
         reader.execute("SET temp_file_limit = -1")
@@ -199,6 +207,7 @@ def test_reader_cannot_raise_temp_file_limit(reader: psycopg.Connection[Any]) ->
 MARKER = "marker_7f3a_other_session"
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "spy_sql",
     [
@@ -237,6 +246,7 @@ def test_reader_cannot_see_another_reader_sessions_query_or_token(
     assert ctx.rsplit(".", 1)[1] not in seen  # not even the signature
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "spy_sql",
     [
@@ -272,6 +282,7 @@ def _attempt(conn: psycopg.Connection[Any], sql: LiteralString, pid: int) -> Exc
     return None
 
 
+@pytest.mark.attack
 def test_reader_cannot_cancel_another_reader_sessions_query(reader_url: str) -> None:
     """All principals share mcp_reader, and by default a role may cancel its own
     other backends. The bootstrap revokes pg_cancel_backend from PUBLIC."""
@@ -305,6 +316,7 @@ def test_reader_cannot_cancel_another_reader_sessions_query(reader_url: str) -> 
         assert "pg_cancel_backend" in str(attack_error)
 
 
+@pytest.mark.attack
 def test_reader_cannot_terminate_another_reader_session(reader_url: str) -> None:
     with (
         psycopg.connect(reader_url, autocommit=True) as attacker,

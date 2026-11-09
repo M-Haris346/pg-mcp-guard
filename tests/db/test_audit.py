@@ -49,6 +49,7 @@ def test_auditor_cannot_read_shop_data(auditor: psycopg.Connection[Any]) -> None
         auditor.execute("SELECT * FROM shop.orders")
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize(
     "sql",
     [

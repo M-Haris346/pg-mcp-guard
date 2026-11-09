@@ -132,6 +132,7 @@ def _forgeries(key: bytes) -> dict[str, str]:
 FORGERY_NAMES = list(_forgeries(b"k" * 32))
 
 
+@pytest.mark.attack
 @pytest.mark.parametrize("forgery", FORGERY_NAMES)
 @pytest.mark.parametrize("relation", ["tenants", "orders", "order_summary"])
 def test_forged_context_sees_nothing_and_does_not_error(
@@ -144,6 +145,7 @@ def test_forged_context_sees_nothing_and_does_not_error(
     assert query_as(reader, forged, EXPOSED[relation]) == []
 
 
+@pytest.mark.attack
 def test_reader_can_replay_its_own_valid_token_only_for_its_tenant(
     reader: psycopg.Connection[Any], token: TokenFactory
 ) -> None:
@@ -196,6 +198,7 @@ def test_every_shop_view_is_security_invoker(migrator: psycopg.Connection[Any]) 
     assert _views_without_security_invoker(migrator) == []
 
 
+@pytest.mark.attack
 def test_default_view_would_bypass_rls_and_the_check_catches_it(
     migrator: psycopg.Connection[Any], reader: psycopg.Connection[Any], token: TokenFactory
 ) -> None:

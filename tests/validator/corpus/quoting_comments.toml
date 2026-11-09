@@ -1,0 +1,85 @@
+# Strings, dollar quoting and comments. Text inside a literal or a comment is
+# not SQL; the parser knows the difference, so these must not be over-blocked.
+
+[[case]]
+id = "dollar_quoted_drop"
+sql = 'SELECT $$; DROP TABLE orders$$'
+verdict = "allow"
+
+[[case]]
+id = "dollar_tag_with_quotes"
+sql = '''SELECT $x$'; SELECT pg_sleep(1); --$x$'''
+verdict = "allow"
+
+[[case]]
+id = "dollar_quoted_function_name"
+sql = 'SELECT $$pg_sleep(1)$$'
+verdict = "allow"
+
+[[case]]
+id = "string_with_semicolon"
+sql = '''SELECT ';DROP TABLE orders' '''
+verdict = "allow"
+
+[[case]]
+id = "doubled_quote_in_string"
+sql = '''SELECT 'a''; DROP TABLE orders; --' '''
+verdict = "allow"
+
+[[case]]
+id = "escape_string_with_quote"
+sql = '''SELECT E'\x27; DROP TABLE orders; --' '''
+verdict = "allow"
+note = "E'...' escapes are decoded inside the literal"
+
+[[case]]
+id = "unicode_string_literal"
+sql = '''SELECT U&'\0027; DROP TABLE orders' '''
+verdict = "allow"
+
+[[case]]
+id = "block_comment_with_semicolon"
+sql = 'SELECT 1 /* ; DROP TABLE orders */'
+verdict = "allow"
+
+[[case]]
+id = "nested_block_comment"
+sql = 'SELECT 1 /* outer /* inner */ ; DROP TABLE orders */'
+verdict = "allow"
+note = "Postgres block comments nest; a naive scanner would see a second statement"
+
+[[case]]
+id = "unterminated_nested_comment"
+sql = 'SELECT 1 /* a /* b */ ; DROP TABLE orders'
+verdict = "reject"
+reason = "syntax_error"
+
+[[case]]
+id = "line_comment_with_semicolon"
+sql = 'SELECT 1 -- ; DROP TABLE orders'
+verdict = "allow"
+
+[[case]]
+id = "comment_before_function"
+sql = 'SELECT /* harmless */ pg_sleep(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "comment_splits_identifier"
+sql = 'SELECT pg_/**/sleep(1)'
+verdict = "reject"
+reason = "syntax_error"
+note = "a comment separates tokens; it does not join them"
+
+[[case]]
+id = "psql_meta_command"
+sql = '\! id'
+verdict = "reject"
+reason = "syntax_error"
+
+[[case]]
+id = "garbage"
+sql = 'this is not sql'
+verdict = "reject"
+reason = "syntax_error"

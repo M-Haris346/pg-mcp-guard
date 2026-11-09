@@ -1,0 +1,310 @@
+# Top-level statements other than SELECT.
+
+[[case]]
+id = "insert"
+sql = '''INSERT INTO shop.tenants (id, name) VALUES (gen_random_uuid(), 'x')'''
+verdict = "reject"
+reason = "statement_not_allowed: INSERT"
+db_test = "test_writes_fail_in_the_default_read_only_transaction"
+
+[[case]]
+id = "update"
+sql = '''UPDATE shop.orders SET status = 'paid' '''
+verdict = "reject"
+reason = "statement_not_allowed: UPDATE"
+db_test = "test_writes_fail_in_the_default_read_only_transaction"
+
+[[case]]
+id = "delete"
+sql = 'DELETE FROM shop.order_items'
+verdict = "reject"
+reason = "statement_not_allowed: DELETE"
+db_test = "test_writes_fail_in_the_default_read_only_transaction"
+
+[[case]]
+id = "truncate"
+sql = 'TRUNCATE shop.orders'
+verdict = "reject"
+reason = "statement_not_allowed: TRUNCATE"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "merge"
+sql = 'MERGE INTO orders o USING customers c ON o.customer_id = c.id WHEN MATCHED THEN DELETE'
+verdict = "reject"
+reason = "statement_not_allowed: MERGE"
+
+[[case]]
+id = "create_table_shop"
+sql = 'CREATE TABLE shop.x (id int)'
+verdict = "reject"
+reason = "statement_not_allowed: CREATE TABLE"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "create_table_public"
+sql = 'CREATE TABLE public.x (id int)'
+verdict = "reject"
+reason = "statement_not_allowed: CREATE TABLE"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "create_temp_table"
+sql = 'CREATE TEMP TABLE x (id int)'
+verdict = "reject"
+reason = "statement_not_allowed: CREATE TABLE"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "create_function"
+sql = '''CREATE FUNCTION shop.f() RETURNS int LANGUAGE sql AS 'SELECT 1' '''
+verdict = "reject"
+reason = "statement_not_allowed: CREATE FUNCTION"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "alter_table_disable_rls"
+sql = 'ALTER TABLE shop.orders DISABLE ROW LEVEL SECURITY'
+verdict = "reject"
+reason = "statement_not_allowed: ALTER TABLE"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "drop_policy"
+sql = 'DROP POLICY tenant_read ON shop.orders'
+verdict = "reject"
+reason = "statement_not_allowed: DROP"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "drop_table"
+sql = 'DROP TABLE shop.orders'
+verdict = "reject"
+reason = "statement_not_allowed: DROP"
+
+[[case]]
+id = "create_table_as"
+sql = 'CREATE TABLE stolen AS SELECT * FROM shop.customers'
+verdict = "reject"
+reason = "statement_not_allowed: CREATE TABLE AS"
+
+[[case]]
+id = "insert_audit"
+sql = '''INSERT INTO audit.tool_calls (tool, verdict, duration_ms) VALUES ('run_query', 'allowed', 1)'''
+verdict = "reject"
+reason = "statement_not_allowed: INSERT"
+db_test = "test_reader_cannot_touch_audit"
+
+[[case]]
+id = "set_transaction_read_write"
+sql = 'SET TRANSACTION READ WRITE'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "begin_read_write"
+sql = 'BEGIN READ WRITE'
+verdict = "reject"
+reason = "statement_not_allowed: BEGIN"
+
+[[case]]
+id = "commit"
+sql = 'COMMIT'
+verdict = "reject"
+reason = "statement_not_allowed: COMMIT"
+
+[[case]]
+id = "rollback"
+sql = 'ROLLBACK'
+verdict = "reject"
+reason = "statement_not_allowed: ROLLBACK"
+
+[[case]]
+id = "set_statement_timeout_zero"
+sql = 'SET statement_timeout = 0'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+note = "with the validator on, the Phase 1 known gap is closed at this layer"
+
+[[case]]
+id = "set_statement_timeout_in_attack"
+sql = 'SET statement_timeout = 0'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+db_test = "test_temp_file_limit_holds_even_after_reader_disables_statement_timeout"
+
+[[case]]
+id = "set_work_mem"
+sql = '''SET work_mem = '64kB' '''
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+db_test = "test_temp_file_limit_holds_even_after_reader_disables_statement_timeout"
+
+[[case]]
+id = "set_temp_file_limit"
+sql = 'SET temp_file_limit = -1'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+db_test = "test_reader_cannot_raise_temp_file_limit"
+
+[[case]]
+id = "set_context_guc"
+sql = '''SET mcpguard.ctx = 'v1.forged' '''
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+
+[[case]]
+id = "set_local_search_path"
+sql = 'SET LOCAL search_path = pg_catalog, shop'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+
+[[case]]
+id = "set_role"
+sql = 'SET ROLE mcp_migrator'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+
+[[case]]
+id = "set_session_authorization"
+sql = 'SET SESSION AUTHORIZATION postgres'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+
+[[case]]
+id = "set_standard_conforming_strings"
+sql = 'SET standard_conforming_strings = off'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+note = "would change how later strings are scanned by the server"
+
+[[case]]
+id = "reset_all"
+sql = 'RESET ALL'
+verdict = "reject"
+reason = "statement_not_allowed: SET"
+
+[[case]]
+id = "show"
+sql = 'SHOW statement_timeout'
+verdict = "reject"
+reason = "statement_not_allowed: SHOW"
+db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+
+[[case]]
+id = "show_read_only"
+sql = 'SHOW transaction_read_only'
+verdict = "reject"
+reason = "statement_not_allowed: SHOW"
+db_test = "test_default_transaction_is_read_only"
+
+[[case]]
+id = "lock_table"
+sql = 'LOCK TABLE shop.orders IN ACCESS EXCLUSIVE MODE'
+verdict = "reject"
+reason = "statement_not_allowed: LOCK"
+
+[[case]]
+id = "explain"
+sql = 'EXPLAIN SELECT 1'
+verdict = "reject"
+reason = "statement_not_allowed: EXPLAIN"
+
+[[case]]
+id = "explain_analyze"
+sql = 'EXPLAIN ANALYZE SELECT pg_sleep(10)'
+verdict = "reject"
+reason = "statement_not_allowed: EXPLAIN"
+note = "EXPLAIN ANALYZE executes the query"
+
+[[case]]
+id = "copy_to_program"
+sql = '''COPY (SELECT 1) TO PROGRAM 'id' '''
+verdict = "reject"
+reason = "statement_not_allowed: COPY"
+
+[[case]]
+id = "copy_to_stdout"
+sql = 'COPY shop.customers TO STDOUT'
+verdict = "reject"
+reason = "statement_not_allowed: COPY"
+
+[[case]]
+id = "do_block"
+sql = 'DO $$BEGIN PERFORM pg_sleep(1); END$$'
+verdict = "reject"
+reason = "statement_not_allowed: DO"
+
+[[case]]
+id = "call"
+sql = 'CALL shop.p()'
+verdict = "reject"
+reason = "statement_not_allowed: CALL"
+
+[[case]]
+id = "prepare"
+sql = 'PREPARE p AS SELECT 1'
+verdict = "reject"
+reason = "statement_not_allowed: PREPARE"
+
+[[case]]
+id = "execute"
+sql = 'EXECUTE p'
+verdict = "reject"
+reason = "statement_not_allowed: EXECUTE"
+
+[[case]]
+id = "listen"
+sql = 'LISTEN x'
+verdict = "reject"
+reason = "statement_not_allowed: LISTEN"
+
+[[case]]
+id = "notify"
+sql = '''NOTIFY x, 'y' '''
+verdict = "reject"
+reason = "statement_not_allowed: NOTIFY"
+
+[[case]]
+id = "discard"
+sql = 'DISCARD ALL'
+verdict = "reject"
+reason = "statement_not_allowed: DISCARD"
+
+[[case]]
+id = "vacuum"
+sql = 'VACUUM shop.orders'
+verdict = "reject"
+reason = "statement_not_allowed: VACUUM"
+
+[[case]]
+id = "grant"
+sql = 'GRANT SELECT ON shop.users TO mcp_reader'
+verdict = "reject"
+reason = "statement_not_allowed: GRANT"
+
+[[case]]
+id = "declare_cursor"
+sql = 'DECLARE c CURSOR FOR SELECT 1'
+verdict = "reject"
+reason = "statement_not_allowed"
+
+[[case]]
+id = "create_extension"
+sql = 'CREATE EXTENSION dblink'
+verdict = "reject"
+reason = "statement_not_allowed"
+
+[[case]]
+id = "load_library"
+sql = '''LOAD 'auto_explain' '''
+verdict = "reject"
+reason = "statement_not_allowed"
+
+[[case]]
+id = "alter_role"
+sql = 'ALTER ROLE mcp_reader SET statement_timeout = 0'
+verdict = "reject"
+reason = "statement_not_allowed"

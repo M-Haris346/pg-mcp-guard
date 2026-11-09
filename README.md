@@ -39,9 +39,19 @@ disabled to show the database holds on its own.
   - Known gap, documented and tested: with the validator off, the reader can lower its own
     `statement_timeout`. Phase 3 adds the mitigation.
 
+- Phase 2 SQL validator (`app/validator.py`,
+  [ADR 0003](docs/decisions/0003-validator-pglast.md)):
+  - Parses with `pglast` (Postgres 18.6 grammar, same as the server). Exactly one `SELECT`.
+  - Deny by default on node types, relations, functions, cast types and operators.
+  - Rejects `SET` / `set_config`. With the validator on, this closes the Phase 1
+    `statement_timeout` gap at this layer.
+  - Adversarial corpus in `tests/validator/corpus/`, with an expected verdict per entry. It covers
+    every attack the database tests use; a meta-test enforces that.
+  - Every allowed corpus query is also run against the real database as `mcp_reader`.
+  - Deeply nested input is rejected without crashing the process.
+
 ## Planned
 
-2. Validator: `pglast` policy and adversarial corpus.
 3. Executor: read-only transaction, bounded fetch, error mapping, fail-closed audit.
 4. MCP server over stdio: `list_tables`, `describe_table`, `run_query`.
 5. Streamable HTTP with per-request bearer JWT.

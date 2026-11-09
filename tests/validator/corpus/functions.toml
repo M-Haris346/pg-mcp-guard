@@ -1,0 +1,401 @@
+# Functions not on the allowlist (deny by default).
+
+[[case]]
+id = "set_config_forged_context"
+sql = '''SELECT set_config('mcpguard.ctx', 'v1.forged', true)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_forged_context_sees_nothing_and_does_not_error"
+note = "rule 4: the impersonation attempt"
+
+[[case]]
+id = "set_config_forged_context_in_where"
+sql = '''SELECT * FROM orders WHERE set_config('mcpguard.ctx', 'v1.forged', true) IS NOT NULL'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_forged_context_sees_nothing_and_does_not_error"
+
+[[case]]
+id = "set_config_replay_own_token"
+sql = '''SELECT set_config('mcpguard.ctx', current_setting('mcpguard.ctx'), true)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_reader_can_replay_its_own_valid_token_only_for_its_tenant"
+
+[[case]]
+id = "set_config_statement_timeout_session"
+sql = '''SELECT set_config('statement_timeout','0',false)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+note = "with the validator on, the Phase 1 known gap is closed at this layer"
+
+[[case]]
+id = "set_config_statement_timeout_local"
+sql = '''SELECT set_config('statement_timeout', '0', true)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_known_gap_reader_can_change_its_own_statement_timeout"
+
+[[case]]
+id = "set_config_temp_file_limit"
+sql = '''SELECT set_config('temp_file_limit', '-1', false)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+db_test = "test_reader_cannot_raise_temp_file_limit"
+
+[[case]]
+id = "qualified_set_config"
+sql = '''SELECT pg_catalog.set_config('mcpguard.ctx', 'x', true)'''
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.set_config"
+
+[[case]]
+id = "current_setting"
+sql = '''SELECT current_setting('mcpguard.ctx')'''
+verdict = "reject"
+reason = "function_not_allowed: current_setting"
+db_test = "test_role_level_settings_apply_to_new_sessions"
+
+[[case]]
+id = "pg_sleep_long"
+sql = 'SELECT pg_sleep(10)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+db_test = "test_statement_timeout_cancels_a_long_query"
+
+[[case]]
+id = "pg_sleep_short"
+sql = 'SELECT pg_sleep(0.1), 1'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+db_test = "test_fast_query_is_allowed"
+
+[[case]]
+id = "pg_sleep_for"
+sql = '''SELECT pg_sleep_for('1 minute')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep_for"
+
+[[case]]
+id = "pg_read_file"
+sql = '''SELECT pg_read_file('/etc/passwd')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_read_file"
+
+[[case]]
+id = "pg_read_binary_file"
+sql = '''SELECT pg_read_binary_file('postgresql.conf')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_read_binary_file"
+
+[[case]]
+id = "pg_ls_dir"
+sql = '''SELECT pg_ls_dir('.')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_ls_dir"
+
+[[case]]
+id = "dblink_exec"
+sql = '''SELECT dblink_exec('host=evil.example', 'DROP TABLE x')'''
+verdict = "reject"
+reason = "function_not_allowed: dblink_exec"
+
+[[case]]
+id = "dblink_in_from"
+sql = '''SELECT * FROM dblink('host=evil.example', 'SELECT 1') AS t(a int)'''
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+
+[[case]]
+id = "lo_create"
+sql = 'SELECT lo_create(0)'
+verdict = "reject"
+reason = "function_not_allowed: lo_create"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "lo_from_bytea"
+sql = '''SELECT lo_from_bytea(0, 'x')'''
+verdict = "reject"
+reason = "function_not_allowed: lo_from_bytea"
+db_test = "test_writes_still_fail_on_privileges_in_a_read_write_transaction"
+
+[[case]]
+id = "lo_import"
+sql = '''SELECT lo_import('/etc/passwd')'''
+verdict = "reject"
+reason = "function_not_allowed: lo_import"
+
+[[case]]
+id = "lo_get"
+sql = 'SELECT lo_get(1)'
+verdict = "reject"
+reason = "function_not_allowed: lo_get"
+
+[[case]]
+id = "pg_cancel_backend"
+sql = 'SELECT pg_cancel_backend(1234)'
+verdict = "reject"
+reason = "function_not_allowed: pg_cancel_backend"
+db_test = "test_reader_cannot_cancel_another_reader_sessions_query"
+
+[[case]]
+id = "pg_terminate_backend"
+sql = 'SELECT pg_terminate_backend(1234)'
+verdict = "reject"
+reason = "function_not_allowed: pg_terminate_backend"
+db_test = "test_reader_cannot_terminate_another_reader_session"
+
+[[case]]
+id = "pg_stat_get_activity_in_from"
+sql = 'SELECT query FROM pg_catalog.pg_stat_get_activity(NULL)'
+verdict = "reject"
+reason = "syntax_not_allowed: RangeFunction"
+db_test = "test_reader_cannot_see_another_reader_sessions_query_or_token"
+
+[[case]]
+id = "pg_stat_get_activity_call"
+sql = 'SELECT pg_stat_get_activity(NULL)'
+verdict = "reject"
+reason = "function_not_allowed: pg_stat_get_activity"
+db_test = "test_activity_views_are_denied_outright"
+
+[[case]]
+id = "pg_stat_get_backend_activity_scan"
+sql = 'SELECT pg_catalog.pg_stat_get_backend_activity(b) FROM pg_catalog.pg_stat_get_backend_idset() AS b'
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.pg_stat_get_backend_activity"
+db_test = "test_reader_cannot_see_another_reader_sessions_query_or_token"
+
+[[case]]
+id = "pg_stat_get_backend_activity"
+sql = 'SELECT pg_catalog.pg_stat_get_backend_activity(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.pg_stat_get_backend_activity"
+db_test = "test_activity_views_are_denied_outright"
+
+[[case]]
+id = "pg_stat_get_backend_idset"
+sql = 'SELECT pg_catalog.pg_stat_get_backend_idset()'
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.pg_stat_get_backend_idset"
+db_test = "test_activity_views_are_denied_outright"
+
+[[case]]
+id = "pg_stat_get_backend_pid"
+sql = 'SELECT pg_catalog.pg_stat_get_backend_pid(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.pg_stat_get_backend_pid"
+db_test = "test_activity_views_are_denied_outright"
+
+[[case]]
+id = "pg_blocking_pids"
+sql = 'SELECT pg_blocking_pids(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_blocking_pids"
+
+[[case]]
+id = "pg_backend_pid"
+sql = 'SELECT pg_backend_pid()'
+verdict = "reject"
+reason = "function_not_allowed: pg_backend_pid"
+
+[[case]]
+id = "pg_advisory_lock"
+sql = 'SELECT pg_advisory_lock(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_advisory_lock"
+note = "a session lock would outlive the call on a pooled connection"
+
+[[case]]
+id = "pg_try_advisory_lock"
+sql = 'SELECT pg_try_advisory_lock(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_try_advisory_lock"
+
+[[case]]
+id = "context_helper"
+sql = 'SELECT private.current_tenant_id()'
+verdict = "reject"
+reason = "function_not_allowed: private.current_tenant_id"
+db_test = "test_reader_can_call_the_context_helper"
+
+[[case]]
+id = "pgcrypto_hmac"
+sql = '''SELECT ext.hmac('a', 'b', 'sha256')'''
+verdict = "reject"
+reason = "function_not_allowed: ext.hmac"
+db_test = "test_hidden_objects_are_denied"
+
+[[case]]
+id = "allowlisted_name_in_other_schema"
+sql = '''SELECT shop.lower('x')'''
+verdict = "reject"
+reason = "function_not_allowed: shop.lower"
+
+[[case]]
+id = "allowlisted_name_in_public"
+sql = 'SELECT public.count(*) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: public.count"
+
+[[case]]
+id = "query_to_xml"
+sql = '''SELECT query_to_xml('SELECT * FROM shop.users', true, true, '')'''
+verdict = "reject"
+reason = "function_not_allowed: query_to_xml"
+note = "runs SQL from a string"
+
+[[case]]
+id = "repeat_memory_bomb"
+sql = '''SELECT repeat('x', 100000000)'''
+verdict = "reject"
+reason = "function_not_allowed: repeat"
+
+[[case]]
+id = "lpad_memory_bomb"
+sql = '''SELECT lpad('x', 100000000)'''
+verdict = "reject"
+reason = "function_not_allowed: lpad"
+
+[[case]]
+id = "array_fill_memory_bomb"
+sql = 'SELECT array_fill(1, ARRAY[100000000])'
+verdict = "reject"
+reason = "function_not_allowed: array_fill"
+
+[[case]]
+id = "generate_series_in_select_list"
+sql = 'SELECT generate_series(1, 1000000000)'
+verdict = "reject"
+reason = "function_not_allowed: generate_series"
+
+[[case]]
+id = "spilling_sort_attack"
+sql = 'SELECT md5(g::text) AS h FROM generate_series(1, 20000000) AS g ORDER BY h'
+verdict = "reject"
+reason = "function_not_allowed: md5"
+db_test = "test_temp_file_limit_holds_even_after_reader_disables_statement_timeout"
+
+[[case]]
+id = "regexp_replace"
+sql = '''SELECT regexp_replace(name, '(a+)+$', '') FROM customers'''
+verdict = "reject"
+reason = "function_not_allowed: regexp_replace"
+
+[[case]]
+id = "substring_regex_form"
+sql = '''SELECT substring(name FROM '(a+)+$') FROM customers'''
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.substring"
+note = "substring(text, text) is a regex; substring is off the allowlist, use substr"
+
+[[case]]
+id = "random"
+sql = 'SELECT random()'
+verdict = "reject"
+reason = "function_not_allowed: random"
+
+[[case]]
+id = "version"
+sql = 'SELECT version()'
+verdict = "reject"
+reason = "function_not_allowed: version"
+
+[[case]]
+id = "current_database"
+sql = 'SELECT current_database()'
+verdict = "reject"
+reason = "function_not_allowed: current_database"
+
+[[case]]
+id = "inet_server_addr"
+sql = 'SELECT inet_server_addr()'
+verdict = "reject"
+reason = "function_not_allowed: inet_server_addr"
+
+[[case]]
+id = "nextval"
+sql = '''SELECT nextval('audit.tool_calls_id_seq')'''
+verdict = "reject"
+reason = "function_not_allowed: nextval"
+
+[[case]]
+id = "pg_notify"
+sql = '''SELECT pg_notify('x', 'y')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_notify"
+
+[[case]]
+id = "txid_current"
+sql = 'SELECT txid_current()'
+verdict = "reject"
+reason = "function_not_allowed: txid_current"
+
+[[case]]
+id = "to_regclass"
+sql = '''SELECT to_regclass('shop.users')'''
+verdict = "reject"
+reason = "function_not_allowed: to_regclass"
+
+[[case]]
+id = "has_table_privilege"
+sql = '''SELECT has_table_privilege('shop.users', 'SELECT')'''
+verdict = "reject"
+reason = "function_not_allowed: has_table_privilege"
+
+[[case]]
+id = "pg_get_functiondef"
+sql = '''SELECT pg_get_functiondef('private.current_tenant_id'::regproc)'''
+verdict = "reject"
+reason = "function_not_allowed: pg_get_functiondef"
+
+[[case]]
+id = "gen_random_uuid"
+sql = 'SELECT gen_random_uuid()'
+verdict = "reject"
+reason = "function_not_allowed: gen_random_uuid"
+
+[[case]]
+id = "current_user"
+sql = 'SELECT current_user'
+verdict = "reject"
+reason = "function_not_allowed: current_user"
+note = "would reveal the internal role name"
+
+[[case]]
+id = "bare_user_keyword"
+sql = 'SELECT user'
+verdict = "reject"
+reason = "function_not_allowed: user"
+
+[[case]]
+id = "session_user"
+sql = 'SELECT session_user'
+verdict = "reject"
+reason = "function_not_allowed: session_user"
+
+[[case]]
+id = "current_role"
+sql = 'SELECT current_role'
+verdict = "reject"
+reason = "function_not_allowed: current_role"
+
+[[case]]
+id = "current_schema"
+sql = 'SELECT current_schema'
+verdict = "reject"
+reason = "function_not_allowed: current_schema"
+
+[[case]]
+id = "current_catalog"
+sql = 'SELECT current_catalog'
+verdict = "reject"
+reason = "function_not_allowed: current_catalog"
+
+[[case]]
+id = "current_user_as_function"
+sql = 'SELECT "current_user"()'
+verdict = "reject"
+reason = "function_not_allowed: current_user"

@@ -14,6 +14,7 @@ def test_fast_query_is_allowed(reader: psycopg.Connection[Any]) -> None:
     assert reader.execute("SELECT pg_sleep(0.1), 1").fetchone() == ("", 1)
 
 
+@pytest.mark.attack
 def test_statement_timeout_cancels_a_long_query(reader: psycopg.Connection[Any]) -> None:
     started = time.monotonic()
     with pytest.raises(errors.QueryCanceled, match="statement timeout"):
@@ -32,6 +33,7 @@ def test_lock_timeout_stops_waiting_for_a_lock(
         assert time.monotonic() - started < 4  # role limit is 1s
 
 
+@pytest.mark.attack
 def test_temp_file_limit_holds_even_after_reader_disables_statement_timeout(
     reader: psycopg.Connection[Any],
 ) -> None:

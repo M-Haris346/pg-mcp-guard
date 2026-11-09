@@ -1,0 +1,136 @@
+# System columns. xmin/xmax/cmin/cmax expose transaction and command ids (a
+# weak side channel on other tenants' write activity); ctid exposes physical
+# row positions; tableoid exposes internal oids.
+
+[[case]]
+id = "xmin"
+sql = 'SELECT xmin FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "xmax"
+sql = 'SELECT xmax FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmax"
+
+[[case]]
+id = "cmin"
+sql = 'SELECT cmin FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: cmin"
+
+[[case]]
+id = "cmax"
+sql = 'SELECT cmax FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: cmax"
+
+[[case]]
+id = "ctid"
+sql = 'SELECT ctid FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: ctid"
+
+[[case]]
+id = "tableoid"
+sql = 'SELECT tableoid FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: tableoid"
+
+[[case]]
+id = "alias_qualified_xmin"
+sql = 'SELECT o.xmin FROM orders o'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "table_qualified_xmax"
+sql = 'SELECT orders.xmax FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmax"
+
+[[case]]
+id = "schema_qualified_ctid"
+sql = 'SELECT shop.orders.ctid FROM shop.orders'
+verdict = "reject"
+reason = "column_not_allowed: ctid"
+
+[[case]]
+id = "alias_qualified_tableoid"
+sql = 'SELECT c.tableoid, c.name FROM customers c'
+verdict = "reject"
+reason = "column_not_allowed: tableoid"
+
+[[case]]
+id = "quoted_xmin"
+sql = 'SELECT "xmin" FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "quoted_qualified_cmin"
+sql = 'SELECT "o"."cmin" FROM orders o'
+verdict = "reject"
+reason = "column_not_allowed: cmin"
+
+[[case]]
+id = "upper_case_xmax"
+sql = 'SELECT XMAX FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmax"
+note = "unquoted identifiers fold to lower case"
+
+[[case]]
+id = "unicode_escaped_xmin"
+sql = 'SELECT U&"\0078min" FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "xmin_cast_to_text"
+sql = 'SELECT xmin::text FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "xmin_in_where"
+sql = 'SELECT id FROM orders WHERE xmin IS NOT NULL'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "xmax_in_order_by"
+sql = 'SELECT id FROM orders ORDER BY xmax'
+verdict = "reject"
+reason = "column_not_allowed: xmax"
+
+[[case]]
+id = "ctid_in_subquery"
+sql = 'SELECT * FROM orders WHERE id IN (SELECT id FROM orders ORDER BY ctid LIMIT 1)'
+verdict = "reject"
+reason = "column_not_allowed: ctid"
+
+[[case]]
+id = "tableoid_in_aggregate"
+sql = 'SELECT count(DISTINCT tableoid) FROM orders'
+verdict = "reject"
+reason = "column_not_allowed: tableoid"
+
+[[case]]
+id = "xmin_in_view"
+sql = 'SELECT xmin FROM order_summary'
+verdict = "reject"
+reason = "column_not_allowed: xmin"
+
+[[case]]
+id = "alias_named_like_system_column"
+sql = 'SELECT count(*) AS xmin_count, max(total_cents) AS "ctid_like" FROM orders'
+verdict = "allow"
+note = "only column references are checked; an output alias containing xmin is fine"
+
+[[case]]
+id = "column_alias_exactly_xmin"
+sql = 'SELECT total_cents AS xmin FROM orders'
+verdict = "allow"
+note = "AS xmin names an output column, it does not read the system column"

@@ -1,0 +1,331 @@
+# Realistic analytic queries that must be allowed (guards against over-blocking).
+# tests/db/test_validator_against_db.py runs every "allow" entry in the corpus
+# as mcp_reader: it must succeed, unless enforced_by = "db", in which case the
+# database must refuse it.
+
+[[case]]
+id = "simple_select"
+sql = 'SELECT id, name, country FROM customers ORDER BY name'
+verdict = "allow"
+
+[[case]]
+id = "select_star_products"
+sql = 'SELECT * FROM products'
+verdict = "allow"
+
+[[case]]
+id = "table_syntax_allowed"
+sql = 'TABLE orders'
+verdict = "allow"
+
+[[case]]
+id = "tenants_granted_columns"
+sql = 'SELECT id, name FROM tenants'
+verdict = "allow"
+
+[[case]]
+id = "group_by_status"
+sql = 'SELECT status, count(*), sum(total_cents) FROM orders GROUP BY status ORDER BY 2 DESC'
+verdict = "allow"
+
+[[case]]
+id = "join_on_composite_key"
+sql = '''SELECT c.name, o.total_cents FROM orders o JOIN customers c ON c.id = o.customer_id AND c.tenant_id = o.tenant_id WHERE o.status = 'paid' '''
+verdict = "allow"
+
+[[case]]
+id = "join_using"
+sql = 'SELECT o.id, i.qty FROM orders o JOIN order_items i ON i.order_id = o.id LEFT JOIN products p ON p.id = i.product_id'
+verdict = "allow"
+
+[[case]]
+id = "qualified_names"
+sql = '''SELECT p.name, p.price_cents FROM shop.products AS p WHERE p.category = 'hardware' '''
+verdict = "allow"
+
+[[case]]
+id = "view"
+sql = 'SELECT customer_name, item_count FROM order_summary ORDER BY item_count DESC'
+verdict = "allow"
+
+[[case]]
+id = "rank_window"
+sql = 'SELECT id, total_cents, rank() OVER (ORDER BY total_cents DESC) FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "lag_window"
+sql = 'SELECT id, created_at, lag(total_cents) OVER (ORDER BY created_at) AS prev FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "named_window_partition"
+sql = 'SELECT id, sum(total_cents) OVER w FROM orders WINDOW w AS (PARTITION BY customer_id ORDER BY created_at)'
+verdict = "allow"
+
+[[case]]
+id = "window_functions_misc"
+sql = 'SELECT row_number() OVER (), dense_rank() OVER (ORDER BY status), ntile(2) OVER (ORDER BY id), first_value(id) OVER (ORDER BY created_at) FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "cte_aggregate"
+sql = 'WITH t AS (SELECT customer_id, sum(total_cents) AS spent FROM orders GROUP BY customer_id) SELECT c.name, t.spent FROM t JOIN customers c ON c.id = t.customer_id'
+verdict = "allow"
+
+[[case]]
+id = "case_expression"
+sql = '''SELECT id, CASE WHEN total_cents > 10000 THEN 'big' ELSE 'small' END AS size FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "lateral_latest_order"
+sql = 'SELECT c.name, latest.total_cents FROM customers c CROSS JOIN LATERAL (SELECT o.total_cents FROM orders o WHERE o.customer_id = c.id ORDER BY o.created_at DESC LIMIT 1) AS latest'
+verdict = "allow"
+
+[[case]]
+id = "values_lookup"
+sql = '''SELECT v.status, v.label FROM (VALUES ('paid', 'Paid'), ('pending', 'Pending')) AS v(status, label)'''
+verdict = "allow"
+
+[[case]]
+id = "values_join"
+sql = '''SELECT o.id, v.label FROM orders o JOIN (VALUES ('paid', 'Paid')) AS v(status, label) ON v.status = o.status'''
+verdict = "allow"
+
+[[case]]
+id = "date_trunc_month"
+sql = '''SELECT date_trunc('month', created_at) AS month, count(*) FROM orders GROUP BY 1 ORDER BY 1'''
+verdict = "allow"
+
+[[case]]
+id = "extract_year"
+sql = 'SELECT extract(year FROM created_at) AS y, count(*) FROM customers GROUP BY 1'
+verdict = "allow"
+
+[[case]]
+id = "date_part_to_char_age"
+sql = '''SELECT date_part('dow', created_at), to_char(created_at, 'YYYY-MM'), age(created_at), make_date(2026, 1, 1) FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "now_and_interval"
+sql = '''SELECT id FROM orders WHERE created_at > now() - interval '10 years' '''
+verdict = "allow"
+
+[[case]]
+id = "sql_value_functions_date_time"
+sql = 'SELECT current_date, current_timestamp, current_timestamp(0), localtime, localtimestamp'
+verdict = "allow"
+
+[[case]]
+id = "at_time_zone"
+sql = '''SELECT created_at AT TIME ZONE 'UTC' FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "coalesce_nullif"
+sql = '''SELECT coalesce(nullif(country, ''), 'unknown') FROM customers'''
+verdict = "allow"
+
+[[case]]
+id = "in_and_between"
+sql = '''SELECT id FROM orders WHERE status IN ('paid', 'shipped') AND total_cents BETWEEN 100 AND 100000'''
+verdict = "allow"
+
+[[case]]
+id = "not_in_and_not_between"
+sql = '''SELECT id FROM orders WHERE status NOT IN ('cancelled') AND total_cents NOT BETWEEN 0 AND 1'''
+verdict = "allow"
+
+[[case]]
+id = "any_array"
+sql = '''SELECT id FROM orders WHERE status = ANY (ARRAY['paid', 'shipped'])'''
+verdict = "allow"
+
+[[case]]
+id = "is_distinct_from"
+sql = '''SELECT id FROM orders WHERE status IS DISTINCT FROM 'cancelled' '''
+verdict = "allow"
+
+[[case]]
+id = "null_and_boolean_tests"
+sql = '''SELECT id FROM customers WHERE country IS NOT NULL AND (country = 'US') IS NOT TRUE'''
+verdict = "allow"
+
+[[case]]
+id = "comparison_and_arithmetic"
+sql = 'SELECT id, total_cents * 2 - 1, total_cents / 3, -total_cents FROM orders WHERE total_cents <> 0 AND total_cents >= 1 AND total_cents % 2 = 0 OR total_cents != 5'
+verdict = "allow"
+
+[[case]]
+id = "row_comparison"
+sql = '''SELECT id FROM orders WHERE (status, total_cents) = ('paid', 9997)'''
+verdict = "allow"
+
+[[case]]
+id = "distinct"
+sql = 'SELECT DISTINCT category FROM products'
+verdict = "allow"
+
+[[case]]
+id = "distinct_on"
+sql = 'SELECT DISTINCT ON (customer_id) customer_id, created_at FROM orders ORDER BY customer_id, created_at DESC'
+verdict = "allow"
+
+[[case]]
+id = "exists_subquery"
+sql = 'SELECT name FROM customers c WHERE EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id)'
+verdict = "allow"
+
+[[case]]
+id = "scalar_subquery"
+sql = 'SELECT name, (SELECT count(*) FROM orders o WHERE o.customer_id = c.id) AS n FROM customers c'
+verdict = "allow"
+
+[[case]]
+id = "in_subquery"
+sql = 'SELECT name FROM customers WHERE id IN (SELECT customer_id FROM orders)'
+verdict = "allow"
+
+[[case]]
+id = "union_all"
+sql = 'SELECT name FROM customers UNION ALL SELECT name FROM products'
+verdict = "allow"
+
+[[case]]
+id = "except"
+sql = 'SELECT id FROM customers EXCEPT SELECT customer_id FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "string_functions"
+sql = '''SELECT upper(name), lower(name), initcap(name), length(name), char_length(name), left(name, 3), right(name, 2), concat(name, '!'), concat_ws('-', country, name), reverse(name) FROM customers'''
+verdict = "allow"
+
+[[case]]
+id = "string_functions_2"
+sql = '''SELECT trim(name), ltrim(name), rtrim(name), position('a' IN name), strpos(name, 'a'), substr(name, 1, 3), split_part(name, ' ', 1), replace(name, ' ', '_'), starts_with(name, 'N') FROM customers'''
+verdict = "allow"
+
+[[case]]
+id = "string_concat_operator"
+sql = '''SELECT name || ' (' || country || ')' FROM customers'''
+verdict = "allow"
+
+[[case]]
+id = "math_functions"
+sql = 'SELECT abs(-1), round(avg(total_cents) / 100.0, 2), ceil(1.5), ceiling(1.5), floor(1.5), trunc(1.5), mod(7, 3), sign(-2), sqrt(16), power(2, 3) FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "aggregates"
+sql = '''SELECT count(*), count(DISTINCT status), min(total_cents), max(total_cents), avg(total_cents), stddev(total_cents), variance(total_cents), bool_and(total_cents > 0), bool_or(status = 'paid'), every(total_cents >= 0) FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "string_agg_ordered"
+sql = '''SELECT string_agg(name, ', ' ORDER BY name) FROM products'''
+verdict = "allow"
+note = "memory-heavy aggregate; bounded by statement_timeout and the Phase 3 response cap (ADR 0003)"
+
+[[case]]
+id = "array_agg_grouped"
+sql = 'SELECT customer_id, array_agg(id) FROM orders GROUP BY customer_id'
+verdict = "allow"
+note = "memory-heavy aggregate; bounded by statement_timeout and the Phase 3 response cap (ADR 0003)"
+
+[[case]]
+id = "percentile"
+sql = 'SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY total_cents), mode() WITHIN GROUP (ORDER BY status) FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "aggregate_filter"
+sql = '''SELECT count(*) FILTER (WHERE status = 'paid') AS paid, count(*) AS total FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "rollup"
+sql = 'SELECT status, count(*) FROM orders GROUP BY ROLLUP (status)'
+verdict = "allow"
+
+[[case]]
+id = "having"
+sql = 'SELECT customer_id FROM orders GROUP BY customer_id HAVING count(*) > 1'
+verdict = "allow"
+
+[[case]]
+id = "greatest_least"
+sql = 'SELECT greatest(price_cents, 1000), least(price_cents, 1000) FROM products'
+verdict = "allow"
+
+[[case]]
+id = "order_items_revenue"
+sql = 'SELECT product_id, sum(qty * unit_price_cents) FROM order_items GROUP BY product_id'
+verdict = "allow"
+
+[[case]]
+id = "limit_offset"
+sql = 'SELECT id FROM orders ORDER BY created_at LIMIT 5 OFFSET 1'
+verdict = "allow"
+
+[[case]]
+id = "fetch_first"
+sql = 'SELECT id FROM orders ORDER BY created_at FETCH FIRST 2 ROWS ONLY'
+verdict = "allow"
+
+[[case]]
+id = "cross_join_four_way"
+sql = 'SELECT count(*) FROM orders a, orders b, orders c, orders d'
+verdict = "allow"
+note = "a large cross join is allowed; bounded by the role statement_timeout (ADR 0003)"
+
+[[case]]
+id = "select_star_customers"
+sql = 'SELECT * FROM customers'
+verdict = "allow"
+enforced_by = "db"
+db_test = "test_sensitive_customer_columns_are_denied"
+note = "the validator does not check columns; the column grant refuses email/phone"
+
+[[case]]
+id = "select_email"
+sql = 'SELECT email FROM shop.customers'
+verdict = "allow"
+enforced_by = "db"
+db_test = "test_sensitive_customer_columns_are_denied"
+
+[[case]]
+id = "select_phone"
+sql = 'SELECT phone FROM shop.customers'
+verdict = "allow"
+enforced_by = "db"
+db_test = "test_sensitive_customer_columns_are_denied"
+
+[[case]]
+id = "count_email"
+sql = 'SELECT count(email) FROM shop.customers'
+verdict = "allow"
+enforced_by = "db"
+db_test = "test_sensitive_customer_columns_are_denied"
+
+[[case]]
+id = "email_in_where"
+sql = '''SELECT name FROM shop.customers WHERE email LIKE '%@%' '''
+verdict = "allow"
+enforced_by = "db"
+db_test = "test_sensitive_customer_columns_are_denied"
+
+[[case]]
+id = "whole_row_as_text"
+sql = 'SELECT c::text FROM customers c'
+verdict = "allow"
+enforced_by = "db"
+note = "a whole-row reference needs SELECT on every column"
+
+[[case]]
+id = "whole_row"
+sql = 'SELECT c FROM customers c'
+verdict = "allow"
+enforced_by = "db"

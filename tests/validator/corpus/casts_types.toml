@@ -1,0 +1,214 @@
+# Casts. reg* casts turn strings into catalog lookups (and regproc etc. can name
+# functions); every type not on the allowlist is rejected.
+
+[[case]]
+id = "regclass"
+sql = '''SELECT 'shop.users'::regclass'''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "regproc"
+sql = '''SELECT 'pg_sleep'::regproc'''
+verdict = "reject"
+reason = "type_not_allowed: regproc"
+
+[[case]]
+id = "regprocedure"
+sql = '''SELECT 'pg_sleep(float8)'::regprocedure'''
+verdict = "reject"
+reason = "type_not_allowed: regprocedure"
+
+[[case]]
+id = "regnamespace"
+sql = '''SELECT 'private'::regnamespace'''
+verdict = "reject"
+reason = "type_not_allowed: regnamespace"
+
+[[case]]
+id = "regrole"
+sql = '''SELECT 'mcp_migrator'::regrole'''
+verdict = "reject"
+reason = "type_not_allowed: regrole"
+
+[[case]]
+id = "regtype"
+sql = '''SELECT 'int4'::regtype'''
+verdict = "reject"
+reason = "type_not_allowed: regtype"
+
+[[case]]
+id = "regoper"
+sql = '''SELECT '+'::regoper'''
+verdict = "reject"
+reason = "type_not_allowed: regoper"
+
+[[case]]
+id = "regoperator"
+sql = '''SELECT '+(int4,int4)'::regoperator'''
+verdict = "reject"
+reason = "type_not_allowed: regoperator"
+
+[[case]]
+id = "regconfig"
+sql = '''SELECT 'english'::regconfig'''
+verdict = "reject"
+reason = "type_not_allowed: regconfig"
+
+[[case]]
+id = "regdictionary"
+sql = '''SELECT 'simple'::regdictionary'''
+verdict = "reject"
+reason = "type_not_allowed: regdictionary"
+
+[[case]]
+id = "regcollation"
+sql = '''SELECT 'C'::regcollation'''
+verdict = "reject"
+reason = "type_not_allowed: regcollation"
+
+[[case]]
+id = "qualified_regclass"
+sql = '''SELECT 'pg_class'::pg_catalog.regclass'''
+verdict = "reject"
+reason = "type_not_allowed: pg_catalog.regclass"
+
+[[case]]
+id = "cast_syntax_regclass"
+sql = '''SELECT CAST('pg_authid' AS regclass)'''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "typed_literal_regclass"
+sql = '''SELECT regclass 'pg_class' '''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "regclass_array"
+sql = '''SELECT '{pg_class}'::regclass[]'''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "chained_cast_to_regclass"
+sql = '''SELECT 'pg_class'::text::regclass'''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "regclass_in_where"
+sql = '''SELECT id FROM orders WHERE 'shop.users'::regclass IS NOT NULL'''
+verdict = "reject"
+reason = "type_not_allowed: regclass"
+
+[[case]]
+id = "oid"
+sql = 'SELECT 1::oid'
+verdict = "reject"
+reason = "type_not_allowed: oid"
+
+[[case]]
+id = "json"
+sql = '''SELECT '{}'::json'''
+verdict = "reject"
+reason = "type_not_allowed: pg_catalog.json"
+note = "json is a keyword since PG 16, so the parser qualifies it"
+
+[[case]]
+id = "jsonb"
+sql = '''SELECT '{}'::jsonb'''
+verdict = "reject"
+reason = "type_not_allowed: jsonb"
+
+[[case]]
+id = "xml"
+sql = '''SELECT '<a/>'::xml'''
+verdict = "reject"
+reason = "type_not_allowed: xml"
+
+[[case]]
+id = "bytea"
+sql = '''SELECT 'x'::bytea'''
+verdict = "reject"
+reason = "type_not_allowed: bytea"
+
+[[case]]
+id = "internal_char"
+sql = '''SELECT 'x'::"char"'''
+verdict = "reject"
+reason = "type_not_allowed: char"
+note = "quoted \"char\" is the internal one-byte type, not char(n)"
+
+[[case]]
+id = "composite_table_type"
+sql = 'SELECT NULL::shop.customers'
+verdict = "reject"
+reason = "type_not_allowed: shop.customers"
+
+[[case]]
+id = "unqualified_table_type"
+sql = 'SELECT NULL::customers'
+verdict = "reject"
+reason = "type_not_allowed: customers"
+
+[[case]]
+id = "int"
+sql = 'SELECT total_cents::int FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "integer_bigint_smallint"
+sql = 'SELECT 1::integer, 2::bigint, 3::smallint'
+verdict = "allow"
+
+[[case]]
+id = "numeric_with_typmod"
+sql = 'SELECT (total_cents / 100.0)::numeric(10, 2) FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "double_precision"
+sql = 'SELECT total_cents::double precision FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "varchar_and_char"
+sql = 'SELECT name::varchar(20), country::char(2) FROM customers'
+verdict = "allow"
+
+[[case]]
+id = "text_and_boolean"
+sql = '''SELECT id::text, 'true'::boolean FROM orders'''
+verdict = "allow"
+
+[[case]]
+id = "date_and_timestamptz"
+sql = 'SELECT created_at::date, created_at::timestamptz, created_at::timestamp FROM orders'
+verdict = "allow"
+
+[[case]]
+id = "interval_literal"
+sql = '''SELECT now() - interval '1 day' '''
+verdict = "allow"
+
+[[case]]
+id = "typed_timestamptz_literal"
+sql = '''SELECT timestamp with time zone '2026-01-01 00:00:00+00' '''
+verdict = "allow"
+
+[[case]]
+id = "uuid_cast"
+sql = '''SELECT id FROM orders WHERE id = '00000000-0000-0000-0000-000000000000'::uuid'''
+verdict = "allow"
+
+[[case]]
+id = "int_array"
+sql = '''SELECT '{1,2}'::int[]'''
+verdict = "allow"
+
+[[case]]
+id = "qualified_int4"
+sql = 'SELECT 1::pg_catalog.int4'
+verdict = "allow"

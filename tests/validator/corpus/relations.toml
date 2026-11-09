@@ -1,0 +1,203 @@
+# Relations not on the allowlist: catalogs, hidden tables, other schemas.
+
+[[case]]
+id = "pg_class_qualified"
+sql = 'SELECT * FROM pg_catalog.pg_class'
+verdict = "reject"
+reason = "relation_not_allowed: pg_catalog.pg_class"
+
+[[case]]
+id = "pg_class_unqualified"
+sql = 'SELECT relname FROM pg_class'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+note = "pg_catalog is searched first even when search_path = shop"
+
+[[case]]
+id = "pg_stat_activity"
+sql = 'SELECT query FROM pg_stat_activity'
+verdict = "reject"
+reason = "relation_not_allowed: pg_stat_activity"
+db_test = "test_reader_cannot_see_another_reader_sessions_query_or_token"
+
+[[case]]
+id = "pg_stat_activity_outright"
+sql = 'SELECT query FROM pg_stat_activity'
+verdict = "reject"
+reason = "relation_not_allowed: pg_stat_activity"
+db_test = "test_activity_views_are_denied_outright"
+
+[[case]]
+id = "pg_locks"
+sql = 'SELECT DISTINCT pid FROM pg_locks'
+verdict = "reject"
+reason = "relation_not_allowed: pg_locks"
+note = "ADR 0002 residual risk 5: lists other sessions' pids at the DB layer"
+
+[[case]]
+id = "pg_settings"
+sql = 'SELECT name, setting FROM pg_settings'
+verdict = "reject"
+reason = "relation_not_allowed: pg_settings"
+
+[[case]]
+id = "pg_roles"
+sql = 'SELECT rolname FROM pg_roles'
+verdict = "reject"
+reason = "relation_not_allowed: pg_roles"
+
+[[case]]
+id = "pg_authid"
+sql = 'SELECT rolpassword FROM pg_authid'
+verdict = "reject"
+reason = "relation_not_allowed: pg_authid"
+
+[[case]]
+id = "pg_shadow"
+sql = 'SELECT * FROM pg_shadow'
+verdict = "reject"
+reason = "relation_not_allowed: pg_shadow"
+
+[[case]]
+id = "pg_user"
+sql = 'SELECT * FROM pg_user'
+verdict = "reject"
+reason = "relation_not_allowed: pg_user"
+
+[[case]]
+id = "pg_proc"
+sql = 'SELECT prosrc FROM pg_proc'
+verdict = "reject"
+reason = "relation_not_allowed: pg_proc"
+
+[[case]]
+id = "pg_stat_statements"
+sql = 'SELECT query FROM pg_stat_statements'
+verdict = "reject"
+reason = "relation_not_allowed: pg_stat_statements"
+
+[[case]]
+id = "information_schema_tables"
+sql = 'SELECT * FROM information_schema.tables'
+verdict = "reject"
+reason = "relation_not_allowed: information_schema.tables"
+
+[[case]]
+id = "information_schema_column_privileges"
+sql = 'SELECT * FROM information_schema.column_privileges'
+verdict = "reject"
+reason = "relation_not_allowed: information_schema.column_privileges"
+
+[[case]]
+id = "users_qualified"
+sql = 'SELECT * FROM shop.users'
+verdict = "reject"
+reason = "relation_not_allowed: shop.users"
+db_test = "test_hidden_objects_are_denied"
+
+[[case]]
+id = "users_unqualified"
+sql = 'SELECT email FROM users'
+verdict = "reject"
+reason = "relation_not_allowed: users"
+
+[[case]]
+id = "memberships"
+sql = 'SELECT * FROM shop.memberships'
+verdict = "reject"
+reason = "relation_not_allowed: shop.memberships"
+db_test = "test_hidden_objects_are_denied"
+
+[[case]]
+id = "context_key"
+sql = 'SELECT * FROM private.context_key'
+verdict = "reject"
+reason = "relation_not_allowed: private.context_key"
+db_test = "test_hidden_objects_are_denied"
+
+[[case]]
+id = "audit_table"
+sql = 'SELECT * FROM audit.tool_calls'
+verdict = "reject"
+reason = "relation_not_allowed: audit.tool_calls"
+db_test = "test_hidden_objects_are_denied"
+
+[[case]]
+id = "audit_table_from_reader"
+sql = 'SELECT * FROM audit.tool_calls'
+verdict = "reject"
+reason = "relation_not_allowed: audit.tool_calls"
+db_test = "test_reader_cannot_touch_audit"
+
+[[case]]
+id = "leaky_default_view"
+sql = 'SELECT tenant_id FROM shop.zz_leaky_orders'
+verdict = "reject"
+reason = "relation_not_allowed: shop.zz_leaky_orders"
+db_test = "test_default_view_would_bypass_rls_and_the_check_catches_it"
+
+[[case]]
+id = "schema_migrations"
+sql = 'SELECT * FROM public.schema_migrations'
+verdict = "reject"
+reason = "relation_not_allowed: public.schema_migrations"
+
+[[case]]
+id = "pg_temp_schema"
+sql = 'SELECT * FROM pg_temp.x'
+verdict = "reject"
+reason = "relation_not_allowed: pg_temp.x"
+
+[[case]]
+id = "database_qualified"
+sql = 'SELECT * FROM mcpguard.shop.orders'
+verdict = "reject"
+reason = "relation_not_allowed: mcpguard.shop.orders"
+
+[[case]]
+id = "table_syntax"
+sql = 'TABLE pg_class'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "only_pg_class"
+sql = 'SELECT * FROM ONLY pg_class'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "catalog_in_join"
+sql = 'SELECT * FROM orders o JOIN pg_catalog.pg_roles r ON true'
+verdict = "reject"
+reason = "relation_not_allowed: pg_catalog.pg_roles"
+
+[[case]]
+id = "catalog_in_scalar_subquery"
+sql = 'SELECT (SELECT count(*) FROM pg_class)'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "hidden_table_in_exists"
+sql = 'SELECT * FROM orders WHERE EXISTS (SELECT 1 FROM shop.users)'
+verdict = "reject"
+reason = "relation_not_allowed: shop.users"
+
+[[case]]
+id = "hidden_table_in_union"
+sql = 'SELECT id FROM orders UNION SELECT id FROM users'
+verdict = "reject"
+reason = "relation_not_allowed: users"
+
+[[case]]
+id = "hidden_table_in_lateral"
+sql = 'SELECT * FROM orders o, LATERAL (SELECT email FROM users) u'
+verdict = "reject"
+reason = "relation_not_allowed: users"
+
+[[case]]
+id = "hidden_table_in_cte"
+sql = 'WITH m AS (SELECT * FROM memberships) SELECT * FROM m'
+verdict = "reject"
+reason = "relation_not_allowed: memberships"

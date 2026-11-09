@@ -1,0 +1,121 @@
+# Quoted, Unicode-escaped and case-varied identifiers. The parser decodes them
+# exactly as the server would, so the validator compares the real names.
+
+[[case]]
+id = "quoted_catalog_and_table"
+sql = 'SELECT * FROM "pg_catalog"."pg_class"'
+verdict = "reject"
+reason = "relation_not_allowed: pg_catalog.pg_class"
+
+[[case]]
+id = "unicode_escaped_pg_class"
+sql = 'SELECT * FROM U&"\0070g_class"'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "unicode_escaped_custom_escape_char"
+sql = '''SELECT * FROM U&"!0070g_class" UESCAPE '!' '''
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "unicode_escaped_users"
+sql = 'SELECT * FROM shop.U&"\0075sers"'
+verdict = "reject"
+reason = "relation_not_allowed: shop.users"
+
+[[case]]
+id = "quoted_pg_sleep"
+sql = 'SELECT "pg_sleep"(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "upper_case_pg_sleep"
+sql = 'SELECT PG_SLEEP(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+note = "unquoted identifiers fold to lower case"
+
+[[case]]
+id = "quoted_upper_case_pg_sleep"
+sql = 'SELECT "PG_SLEEP"(1)'
+verdict = "reject"
+reason = "function_not_allowed: PG_SLEEP"
+
+[[case]]
+id = "unicode_escaped_pg_sleep"
+sql = 'SELECT U&"\0070g_sleep"(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "unicode_escaped_set_config"
+sql = '''SELECT U&"set\005Fconfig"('mcpguard.ctx', 'x', true)'''
+verdict = "reject"
+reason = "function_not_allowed: set_config"
+
+[[case]]
+id = "quoted_qualified_pg_sleep"
+sql = 'SELECT "pg_catalog"."pg_sleep"(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_catalog.pg_sleep"
+
+[[case]]
+id = "whitespace_between_name_and_paren"
+sql = '''SELECT	pg_sleep
+(1)'''
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "quoted_mixed_case_table"
+sql = 'SELECT * FROM "Orders"'
+verdict = "reject"
+reason = "relation_not_allowed: Orders"
+note = "quoted names keep their case; no such table"
+
+[[case]]
+id = "quoted_with_trailing_space"
+sql = 'SELECT * FROM "orders "'
+verdict = "reject"
+reason = "relation_not_allowed: orders "
+
+[[case]]
+id = "quoted_upper_schema"
+sql = 'SELECT * FROM "SHOP".orders'
+verdict = "reject"
+reason = "relation_not_allowed: SHOP.orders"
+
+[[case]]
+id = "control_character_identifier"
+sql = 'SELECT * FROM U&"\0007orders"'
+verdict = "reject"
+reason = "relation_not_allowed: orders"
+note = "the BEL character is stripped from the reason shown to the model"
+
+[[case]]
+id = "upper_case_table"
+sql = 'SELECT * FROM ORDERS'
+verdict = "allow"
+
+[[case]]
+id = "quoted_table"
+sql = 'SELECT * FROM "orders"'
+verdict = "allow"
+
+[[case]]
+id = "unicode_escaped_table"
+sql = 'SELECT * FROM U&"\006Frders"'
+verdict = "allow"
+
+[[case]]
+id = "quoted_schema_and_table"
+sql = 'SELECT * FROM "shop"."orders"'
+verdict = "allow"
+
+[[case]]
+id = "quoted_allowed_function"
+sql = 'SELECT "lower"(name) FROM customers'
+verdict = "allow"

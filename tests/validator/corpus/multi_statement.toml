@@ -1,0 +1,113 @@
+# More than one statement in one string. The archived reference Postgres MCP
+# server ran model SQL in a READ ONLY transaction and "COMMIT; DROP ..." escaped
+# it (Datadog Security Labs).
+
+[[case]]
+id = "two_selects"
+sql = 'SELECT 1; SELECT 2'
+verdict = "reject"
+reason = "multiple_statements"
+db_test = "test_extended_protocol_refuses_multiple_statements"
+
+[[case]]
+id = "commit_drop"
+sql = 'COMMIT; DROP TABLE shop.orders'
+verdict = "reject"
+reason = "multiple_statements"
+db_test = "test_commit_escape_cannot_drop_a_table"
+note = "the Datadog case"
+
+[[case]]
+id = "commit_begin_read_write_drop"
+sql = 'COMMIT; BEGIN READ WRITE; DROP TABLE shop.orders'
+verdict = "reject"
+reason = "multiple_statements"
+db_test = "test_commit_escape_cannot_drop_a_table"
+
+[[case]]
+id = "commit_set_read_only_off_drop"
+sql = 'COMMIT; SET default_transaction_read_only = off; DROP TABLE shop.orders'
+verdict = "reject"
+reason = "multiple_statements"
+db_test = "test_commit_escape_cannot_drop_a_table"
+
+[[case]]
+id = "select_then_drop"
+sql = 'SELECT * FROM orders; DROP TABLE orders'
+verdict = "reject"
+reason = "multiple_statements"
+
+[[case]]
+id = "select_then_set"
+sql = 'SELECT 1; SET statement_timeout = 0'
+verdict = "reject"
+reason = "multiple_statements"
+
+[[case]]
+id = "newline_separated"
+sql = '''
+SELECT 1
+;
+SELECT pg_sleep(1)'''
+verdict = "reject"
+reason = "multiple_statements"
+
+[[case]]
+id = "statement_after_line_comment_newline"
+sql = '''
+SELECT 1 --
+; DROP TABLE orders'''
+verdict = "reject"
+reason = "multiple_statements"
+note = "a line comment ends at the newline"
+
+[[case]]
+id = "backslash_does_not_escape_quote"
+sql = '''SELECT 'a\'; DROP TABLE orders; --' '''
+verdict = "reject"
+reason = "multiple_statements"
+note = "standard_conforming_strings: the backslash is literal, so the string ends early"
+
+[[case]]
+id = "nul_byte_truncation"
+sql = "SELECT 1\u0000; DROP TABLE shop.orders"
+verdict = "reject"
+reason = "syntax_error: NUL character"
+note = "C-string parsers would stop at the NUL; refuse instead of guessing"
+
+[[case]]
+id = "trailing_semicolon"
+sql = 'SELECT 1;'
+verdict = "allow"
+
+[[case]]
+id = "trailing_semicolons"
+sql = 'SELECT 1;;'
+verdict = "allow"
+note = "empty statements are dropped by the parser: still one statement"
+
+[[case]]
+id = "empty"
+sql = ''
+verdict = "reject"
+reason = "empty_query"
+
+[[case]]
+id = "whitespace_only"
+sql = '''
+
+   '''
+verdict = "reject"
+reason = "empty_query"
+
+[[case]]
+id = "semicolon_only"
+sql = ';'
+verdict = "reject"
+reason = "empty_query"
+
+[[case]]
+id = "comment_only"
+sql = '-- nothing here'
+verdict = "reject"
+reason = "empty_query"

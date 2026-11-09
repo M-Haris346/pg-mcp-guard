@@ -1,0 +1,230 @@
+# A forbidden function hidden somewhere other than the select list.
+# The walk covers the whole tree, so every one must be found.
+
+[[case]]
+id = "in_where"
+sql = 'SELECT id FROM orders WHERE pg_sleep(1) IS NULL'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_order_by"
+sql = 'SELECT id FROM orders ORDER BY pg_sleep(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_group_by"
+sql = 'SELECT count(*) FROM orders GROUP BY pg_sleep(1)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_having"
+sql = 'SELECT status FROM orders GROUP BY status HAVING pg_sleep(1) IS NULL'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_lateral_subquery"
+sql = 'SELECT * FROM orders o, LATERAL (SELECT pg_sleep(1)) s'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_values"
+sql = 'VALUES (pg_sleep(1))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_values_in_from"
+sql = 'SELECT * FROM (VALUES (1), (pg_sleep(1))) AS v(x)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_in_subquery"
+sql = 'SELECT * FROM orders WHERE id IN (SELECT id FROM orders WHERE pg_sleep(1) IS NULL)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_exists"
+sql = 'SELECT 1 WHERE EXISTS (SELECT pg_sleep(1))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_scalar_subquery"
+sql = 'SELECT (SELECT pg_sleep(1))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_any_sublink"
+sql = 'SELECT 1 = ANY (SELECT pg_sleep(1)::text::int)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_case"
+sql = 'SELECT CASE WHEN true THEN pg_sleep(1) END'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_case_condition"
+sql = '''SELECT CASE WHEN pg_sleep(1) IS NULL THEN 'a' ELSE 'b' END'''
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_aggregate_filter"
+sql = 'SELECT count(*) FILTER (WHERE pg_sleep(1) IS NULL) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_aggregate_order_by"
+sql = '''SELECT string_agg(name, ',' ORDER BY pg_sleep(1)::text) FROM customers'''
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_window_order"
+sql = 'SELECT row_number() OVER (ORDER BY pg_sleep(1)) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_window_partition"
+sql = 'SELECT row_number() OVER (PARTITION BY pg_sleep(1)) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_named_window"
+sql = 'SELECT sum(total_cents) OVER w FROM orders WINDOW w AS (ORDER BY pg_sleep(1))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_window_frame_offset"
+sql = 'SELECT sum(total_cents) OVER (ORDER BY created_at ROWS BETWEEN length(pg_sleep(1)::text) PRECEDING AND CURRENT ROW) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_limit"
+sql = 'SELECT id FROM orders LIMIT length(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_offset"
+sql = 'SELECT id FROM orders OFFSET length(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_join_on"
+sql = 'SELECT * FROM orders o JOIN customers c ON pg_sleep(1) IS NULL'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_cte"
+sql = 'WITH s AS (SELECT pg_sleep(1)) SELECT * FROM s'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_union_branch"
+sql = 'SELECT 1 UNION SELECT length(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_intersect_branch"
+sql = 'SELECT 1 INTERSECT SELECT length(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_cast"
+sql = 'SELECT pg_sleep(1)::text'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_allowed_function"
+sql = 'SELECT lower(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_coalesce"
+sql = '''SELECT coalesce(pg_sleep(1)::text, 'x')'''
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_greatest"
+sql = 'SELECT greatest(1, length(pg_sleep(1)::text))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_array"
+sql = 'SELECT ARRAY[pg_sleep(1)]'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_row"
+sql = 'SELECT ROW(1, pg_sleep(1))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_in_list"
+sql = 'SELECT 1 IN (1, length(pg_sleep(1)::text))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "inside_between"
+sql = 'SELECT 1 BETWEEN 0 AND length(pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_distinct_on"
+sql = 'SELECT DISTINCT ON (pg_sleep(1)::text) id FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_rollup"
+sql = 'SELECT count(*) FROM orders GROUP BY ROLLUP (pg_sleep(1)::text)'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_within_group"
+sql = 'SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY length(pg_sleep(1)::text)) FROM orders'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "in_derived_table_in_join"
+sql = 'SELECT * FROM orders o JOIN (SELECT pg_sleep(1) AS x) s ON true'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"
+
+[[case]]
+id = "deeply_parenthesised"
+sql = 'SELECT (((((pg_sleep(1))))))'
+verdict = "reject"
+reason = "function_not_allowed: pg_sleep"

@@ -191,6 +191,8 @@ uv run python -m app.server      # stdio MCP server (for Claude Desktop / Claude
      multi-statement strings; the simple protocol does not.
    - Client-side deadline + server-side query cancel, because the reader can lower its own
      `statement_timeout` (known gap, ADR 0002).
+   - `validate()` is synchronous and starts a thread per call (large stack, ADR 0003); call it
+     from async code with `asyncio.to_thread(validate, sql)`, never directly on the event loop.
 4. MCP server over stdio: three tools, startup token verification, in-memory client tests,
    Claude Desktop / Code config example.
 5. Streamable HTTP + per-request bearer JWT (two principals, one process, isolation test).

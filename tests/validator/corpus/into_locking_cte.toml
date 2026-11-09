@@ -1,0 +1,178 @@
+# SELECT INTO, locking clauses, data-modifying and recursive CTEs, CTE scoping.
+
+[[case]]
+id = "select_into"
+sql = 'SELECT * INTO shop.stolen FROM orders'
+verdict = "reject"
+reason = "select_into"
+
+[[case]]
+id = "select_into_temp"
+sql = 'SELECT * INTO TEMP t FROM orders'
+verdict = "reject"
+reason = "select_into"
+
+[[case]]
+id = "for_update"
+sql = 'SELECT * FROM orders FOR UPDATE'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_share"
+sql = 'SELECT * FROM orders FOR SHARE'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_no_key_update"
+sql = 'SELECT * FROM orders FOR NO KEY UPDATE'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_key_share"
+sql = 'SELECT * FROM orders FOR KEY SHARE'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_update_nowait"
+sql = 'SELECT * FROM orders FOR UPDATE NOWAIT'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_update_skip_locked"
+sql = 'SELECT * FROM orders FOR UPDATE SKIP LOCKED'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_update_of_table"
+sql = 'SELECT * FROM orders o JOIN customers c ON c.id = o.customer_id FOR UPDATE OF o'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_update_in_subquery"
+sql = 'SELECT * FROM (SELECT * FROM orders FOR UPDATE) s'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_update_in_cte"
+sql = 'WITH s AS (SELECT * FROM orders FOR UPDATE) SELECT * FROM s'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "for_share_in_exists"
+sql = 'SELECT EXISTS (SELECT 1 FROM orders FOR SHARE)'
+verdict = "reject"
+reason = "locking_clause"
+
+[[case]]
+id = "cte_delete"
+sql = 'WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d'
+verdict = "reject"
+reason = "data_modifying_cte: DELETE"
+
+[[case]]
+id = "cte_update"
+sql = '''WITH u AS (UPDATE orders SET status = 'paid' RETURNING id) SELECT * FROM u'''
+verdict = "reject"
+reason = "data_modifying_cte: UPDATE"
+
+[[case]]
+id = "cte_insert"
+sql = '''WITH i AS (INSERT INTO tenants (id, name) VALUES (gen_random_uuid(), 'x') RETURNING id) SELECT * FROM i'''
+verdict = "reject"
+reason = "data_modifying_cte: INSERT"
+
+[[case]]
+id = "cte_merge"
+sql = 'WITH m AS (MERGE INTO orders o USING customers c ON o.customer_id = c.id WHEN MATCHED THEN DELETE RETURNING o.id) SELECT * FROM m'
+verdict = "reject"
+reason = "data_modifying_cte: MERGE"
+
+[[case]]
+id = "cte_delete_second_sibling"
+sql = 'WITH a AS (SELECT 1), d AS (DELETE FROM orders RETURNING id) SELECT * FROM a'
+verdict = "reject"
+reason = "data_modifying_cte: DELETE"
+note = "an unreferenced data-modifying CTE still runs"
+
+[[case]]
+id = "cte_delete_in_subquery"
+sql = 'SELECT * FROM (WITH d AS (DELETE FROM orders RETURNING id) SELECT id FROM d) s'
+verdict = "reject"
+reason = "data_modifying_cte: DELETE"
+
+[[case]]
+id = "cte_delete_in_sublink"
+sql = 'SELECT 1 WHERE EXISTS (WITH d AS (DELETE FROM orders RETURNING id) SELECT 1 FROM d)'
+verdict = "reject"
+reason = "data_modifying_cte: DELETE"
+
+[[case]]
+id = "recursive_cte_loop"
+sql = 'WITH RECURSIVE t(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM t) SELECT count(*) FROM t'
+verdict = "reject"
+reason = "recursive_cte"
+note = "unbounded loop: CPU only, no temp files"
+
+[[case]]
+id = "recursive_keyword_alone"
+sql = 'WITH RECURSIVE x AS (SELECT 1) SELECT * FROM x'
+verdict = "reject"
+reason = "recursive_cte"
+
+[[case]]
+id = "cte_shadow_does_not_leak_out_of_subquery"
+sql = 'SELECT * FROM (WITH users AS (SELECT 1 AS id) SELECT * FROM users) s, users'
+verdict = "reject"
+reason = "relation_not_allowed: users"
+note = "the outer users is the real shop.users table"
+
+[[case]]
+id = "cte_not_visible_to_earlier_sibling"
+sql = 'WITH a AS (SELECT * FROM users), users AS (SELECT 1) SELECT * FROM a'
+verdict = "reject"
+reason = "relation_not_allowed: users"
+note = "non-recursive WITH: a cannot see the later sibling, so users is the real table"
+
+[[case]]
+id = "cte_in_subquery_not_visible_outside"
+sql = 'SELECT * FROM (WITH pg_class AS (SELECT 1) SELECT 1) s JOIN pg_class ON true'
+verdict = "reject"
+reason = "relation_not_allowed: pg_class"
+
+[[case]]
+id = "cte_name_does_not_cover_qualified_name"
+sql = 'WITH users AS (SELECT 1) SELECT * FROM shop.users'
+verdict = "reject"
+reason = "relation_not_allowed: shop.users"
+note = "a schema-qualified name never refers to a CTE"
+
+[[case]]
+id = "cte_named_like_hidden_table"
+sql = 'WITH users AS (SELECT id FROM customers) SELECT * FROM users'
+verdict = "allow"
+note = "users here is the CTE, and Postgres resolves it the same way"
+
+[[case]]
+id = "cte_named_like_catalog_table"
+sql = 'WITH pg_class AS (SELECT 1 AS x) SELECT x FROM pg_class'
+verdict = "allow"
+note = "CTE names win over catalog tables for unqualified references"
+
+[[case]]
+id = "cte_sees_earlier_sibling"
+sql = 'WITH a AS (SELECT id FROM orders), b AS (SELECT count(*) AS n FROM a) SELECT n FROM b'
+verdict = "allow"
+
+[[case]]
+id = "cte_visible_inside_subquery"
+sql = 'WITH t AS (SELECT id FROM orders) SELECT (SELECT count(*) FROM t) AS n'
+verdict = "allow"
