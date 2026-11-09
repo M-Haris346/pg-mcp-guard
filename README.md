@@ -1,114 +1,162 @@
 # pg-mcp-guard
 
-An MCP (Model Context Protocol) server that lets an LLM agent run **read-only SQL** against
-PostgreSQL. Safety is enforced by **the database first** (a least-privilege role, column grants,
-row-level security keyed to a signed identity context, role-level timeouts) and by a SQL validator
-built on Postgres's own parser second — never by the prompt.
+[![CI](https://github.com/M-Haris346/pg-mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/M-Haris346/pg-mcp-guard/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+An MCP server that lets an LLM agent run read-only SQL against PostgreSQL, where safety is enforced
+by the database first and by a SQL validator second, never by the prompt. The tests prove that a
+model can only read rows and columns its principal may read, cannot change anything, cannot exhaust
+the database, and is audited, even when the validator is switched off.
 
 ## Why
 
 The archived reference Postgres MCP server ran model-written SQL inside a `READ ONLY` transaction,
-and a multi-statement string (`COMMIT; DROP ...`) escaped it. See Datadog Security Labs,
-"MCP vulnerability case study: SQL injection in the PostgreSQL MCP server". This repo shows a
-layered fix, with tests for each layer, including tests that run attacks with the validator
-disabled to show the database holds on its own.
+and a multi-statement string (`COMMIT; DROP ...`) escaped it. See Datadog Security Labs, "MCP
+vulnerability case study: SQL injection in the PostgreSQL MCP server". A read-only transaction, or
+a filter on the SQL text, is one layer. This repo shows a layered fix, and tests each layer on its
+own.
 
-## Implemented / Tested
+## How it works
 
-- Phase 0 scaffold: `uv` project with dependency cutoff and exact pins for `mcp` and `pglast`
-  ([ADR 0001](docs/decisions/0001-dependency-pinning.md)), ruff, `mypy --strict`, Postgres 18
-  compose service pinned by digest, CI skeleton.
-- JSON logging to stderr only (stdout is the stdio MCP channel) — tested.
-- Phase 1 database layer. Every item below is tested as `mcp_reader` with **no validator**
-  (`tests/db/`):
-  - Roles `mcp_migrator`, `mcp_rls_helper`, `mcp_reader`, `mcp_auditor`. The reader is not a
-    superuser, cannot bypass RLS and owns nothing. Its role-level limits are read-only by default,
-    `statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`, `temp_file_limit`
-    (which only a superuser can change) and a connection limit.
-  - Tenant isolation through `ENABLE` + `FORCE` RLS on every `shop` table, keyed to an
-    HMAC-signed, short-lived context that the database verifies
-    ([ADR 0002](docs/decisions/0002-signed-rls-context.md)). Forged, tampered, expired and
-    malformed contexts see zero rows.
-  - Column grants: customer email and phone are never readable.
-  - Writes are blocked twice, by the read-only transaction and by the missing privileges.
-    The `COMMIT; DROP ...` escape fails.
-  - Sessions sharing one role cannot read each other's query text (`pg_stat_activity` revoked).
-  - Every exposed view is `security_invoker`. A test shows a default view leaking rows across
-    tenants, which is why the rule exists.
-  - Append-only audit table: `mcp_auditor` may only insert.
-  - Known gap, documented and tested: with the validator off, the reader can lower its own
-    `statement_timeout`. Phase 3 adds the mitigation.
+```mermaid
+flowchart TD
+    C["MCP client (the model)"] -->|"stdio, or HTTP with a bearer JWT per request"| T["Transport and auth<br/>principal from a verified token, never from tool arguments"]
+    T --> G["ToolCallGuard<br/>token expiry, strict arguments, audited refusals"]
+    G --> V["Validator (pglast, Postgres's own parser)<br/>one SELECT, deny-by-default allowlists"]
+    V --> E["Executor<br/>READ ONLY transaction, signed context, SET LOCAL limits,<br/>deadline and cancel, bounded fetch"]
+    E -->|"as mcp_reader"| P[("Postgres<br/>least-privilege role, column grants, forced RLS,<br/>revoked functions, role limits")]
+    E -->|"as mcp_auditor, fail closed"| A[("audit.tool_calls")]
+```
 
-- Phase 2 SQL validator (`app/validator.py`,
-  [ADR 0003](docs/decisions/0003-validator-pglast.md)):
-  - Parses with `pglast` (Postgres 18.6 grammar, same as the server). Exactly one `SELECT`.
-  - Deny by default on node types, relations, functions, cast types and operators.
-  - Rejects `SET` / `set_config`. With the validator on, this closes the Phase 1
-    `statement_timeout` gap at this layer.
-  - Adversarial corpus in `tests/validator/corpus/`, with an expected verdict per entry. It covers
-    every attack the database tests use; a meta-test enforces that.
-  - Every allowed corpus query is also run against the real database as `mcp_reader`.
-  - Deeply nested input is rejected without crashing the process.
+One `run_query` call:
 
-- Phase 3 executor (`app/executor.py`, [ADR 0004](docs/decisions/0004-executor.md)). Integration
-  tests in `tests/executor/`, many of them with the validator off:
-  - validation off the event loop;
-  - an explicit `READ ONLY` transaction with transaction-local limits;
-  - the signed context sent only as a bind parameter;
-  - model SQL only through a server-side cursor (extended protocol);
-  - at most `max_rows + 1` rows fetched, plus cell and response byte caps, with strict-JSON values;
-  - a client-side deadline with server-side cancel and a hard backstop, and connections that saw
-    a cancel are never reused;
-  - `DISCARD ALL` on pool return;
-  - database errors mapped to model-readable reasons with no internals;
-  - an audit row for every call; if the audit write fails, no result is returned.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as Model via MCP client
+    participant S as Server: guard and validator
+    participant X as Executor
+    participant DB as Postgres as mcp_reader
+    participant AU as Audit as mcp_auditor
+    M->>S: tools/call run_query(sql)
+    S->>S: principal from the token, check expiry and arguments
+    S->>S: validate(sql) in a worker thread
+    S->>X: run_query(principal, sql)
+    X->>DB: BEGIN READ ONLY, then SET LOCAL limits
+    X->>DB: SELECT ctx.set_context($1) with an HMAC-signed, short-lived token
+    X->>DB: DECLARE cursor FOR sql, FETCH at most max_rows + 1
+    DB-->>X: only rows RLS allows (signature, expiry and membership checked in the DB)
+    X->>DB: ROLLBACK
+    X->>AU: INSERT one audit row
+    AU-->>X: ok, or no result is returned
+    X-->>S: rows, or an exact reason such as function_not_allowed
+    S-->>M: result fenced and labelled as untrusted data
+```
 
-- Phase 4 MCP server over stdio (`app/server.py`,
-  [ADR 0005](docs/decisions/0005-mcp-server.md), client setup in [docs/clients.md](docs/clients.md)).
-  Tested through the SDK's in-memory client and as a real subprocess over stdio:
-  - three read-only tools: `list_tables`, `describe_table`, `run_query`;
-  - the principal comes from a JWT verified at startup (HS256, required claims, maximum lifetime)
-    and its expiry is re-checked on every call. The server refuses to start on a bad token, an
-    unreachable database or a user who is not a member of the tenant;
-  - tool inputs are strict: identity arguments such as `tenant_id` are rejected and audited;
-  - results are labelled as untrusted data, in a fence that neither data nor column aliases can
-    close;
-  - exact error reasons, MCP cancellation reaching the database, and logs on stderr only.
-  - In stdio mode whoever runs the server holds the secrets and can mint any identity. The token
-    stops the *model* from choosing identity; multi-user trust is Phase 5.
+## Defence in depth
 
-- Phase 5 Streamable HTTP (`app/http_transport.py`,
-  [ADR 0006](docs/decisions/0006-http-transport.md)). It uses the MCP SDK's own bearer-auth path,
-  with tests against a real uvicorn server and the real server process:
-  - the principal comes from the bearer token of **every request**, never from the session or tool
-    arguments. A bad token or a non-member gets a generic 401, audited with its internal reason
-    (rate-limited);
-  - two principals in one process, with concurrent calls, session-id reuse with another token, and
-    the SDK's session-owner check switched off: no cross-tenant rows in any case;
-  - loopback bind by default, with DNS-rebinding protection always on (Host 421, Origin 403);
-  - body limit 256 KiB (413), session cap (503);
-  - cancellation and client disconnects audited as `cancelled`;
-  - no token or Authorization header in the logs, even at DEBUG;
-  - every MCP tool test also runs over HTTP.
-  - No TLS here: put a TLS-terminating reverse proxy in front for remote use.
+| Layer | What it stops | Proof |
+|---|---|---|
+| **Postgres role and grants** | writes, DDL, catalog and audit reads, `email` / `phone`, large objects, cancelling other sessions, changing any setting (`set_config` revoked) | [tests/db/test_grants.py](tests/db/test_grants.py), [tests/db/test_set_config.py](tests/db/test_set_config.py) (validator off) |
+| **Row-level security + signed context** | another tenant's rows; forged, tampered or expired contexts; non-members | [tests/db/test_rls.py](tests/db/test_rls.py) (validator off) |
+| **Role limits** | long queries, lock waits, huge spilling sorts, connection floods | [tests/db/test_limits.py](tests/db/test_limits.py) (validator off) |
+| **Validator** | anything but one `SELECT`; functions, relations, types and operators off the allowlists, wherever they hide | [tests/validator/](tests/validator/) (adversarial corpus) |
+| **Executor** | multi-statement strings, unbounded results, queries past the deadline, state left for the next caller, unaudited calls | [tests/executor/](tests/executor/) (many with the validator off) |
+| **Transport and auth** | identity from tool arguments, bad or expired tokens, session-id reuse, DNS rebinding, oversized bodies, tokens in logs | [tests/mcp/](tests/mcp/), [tests/http/](tests/http/) |
 
-## Planned
+The full attack → control → test table, with residual risks, is in the
+[threat model](docs/threat-model.md).
 
-6. Threat model, ADRs, demo.
+### Why many tests run with the validator disabled
+
+This is deliberate. A validator is code, and code has bugs. The claim this project makes is that
+the **database** holds even when the validator lets something through. So the database tests
+connect as the real runtime role and send attacks straight to Postgres, and many executor and HTTP
+tests replace the validator with one that allows everything. The validator has its own corpus of
+attacks with expected verdicts, and a meta-test fails if a database attack test has no
+matching corpus entry.
+
+## Quickstart
+
+Needs Docker and [uv](https://docs.astral.sh/uv/).
+
+```
+uv run python scripts/dev_setup.py      # .env with fresh secrets, Postgres, migrations, demo data
+uv run python scripts/demo.py           # the real server, driven by a real MCP client
+```
+
+- **`dev_setup.py`** creates `.env` only if it does not exist, and never prints secrets. If port
+  5432 is taken, use `--port 5433`.
+- **`demo.py`** shows each scene's question, the SQL and the outcome, and exits non-zero if any
+  scene misbehaves. `--pause` waits for Enter between scenes (for recording); `--no-color` gives
+  plain output.
+
+To connect Claude Desktop, Claude Code or MCP Inspector (stdio or HTTP), see
+[docs/clients.md](docs/clients.md).
 
 ## Development
 
 ```
-cp .env.example .env             # then replace every change-me
-docker compose up -d db          # first start runs db/bootstrap (roles, databases)
-uv sync
-uv run python scripts/migrate.py
-uv run python scripts/seed.py
-uv run pytest                    # migrates and seeds its own mcpguard_test database
+uv run pytest                            # migrates and seeds its own mcpguard_test database
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
 uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only
-MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server                    # stdio MCP server
-uv run python -m app.server --transport http      # Streamable HTTP on 127.0.0.1:8765/mcp
+MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server                    # stdio
+uv run python -m app.server --transport http                                # 127.0.0.1:8765/mcp
 ```
 
-To connect Claude Desktop, Claude Code or MCP Inspector, see [docs/clients.md](docs/clients.md).
+Design decisions are recorded in [docs/decisions/](docs/decisions/README.md).
+
+## Implemented / Tested
+
+- **Database layer** ([ADR 0002](docs/decisions/0002-signed-rls-context.md)):
+  - roles `mcp_migrator`, `mcp_rls_helper`, `mcp_reader`, `mcp_auditor`;
+  - forced RLS keyed to an HMAC-signed context verified in Postgres;
+  - column grants and `security_invoker` views;
+  - role-level limits;
+  - revoked `set_config`, stats, cancel and large-object functions;
+  - an append-only audit table.
+- **Validator** ([ADR 0003](docs/decisions/0003-validator-pglast.md)): pglast at Postgres 18.6,
+  deny by default, adversarial corpus. Every allowed query is also run against the real database.
+- **Executor** ([ADR 0004](docs/decisions/0004-executor.md)):
+  - read-only transaction;
+  - server-side cursor over the extended protocol;
+  - byte and row caps;
+  - deadline, cancel and backstop;
+  - `DISCARD ALL`;
+  - mapped errors;
+  - fail-closed audit, including cancellations.
+- **MCP server over stdio** ([ADR 0005](docs/decisions/0005-mcp-server.md)):
+  - three read-only tools with strict inputs;
+  - principal from a verified JWT, expiry checked per call;
+  - untrusted-data fence;
+  - fail-closed startup checks.
+- **Streamable HTTP** ([ADR 0006](docs/decisions/0006-http-transport.md)):
+  - bearer token on every request through the SDK's auth path, audited 401s;
+  - isolation of principals in one process;
+  - loopback by default, DNS-rebinding protection, body and session limits.
+- **Demo and setup:** `scripts/demo.py` (checked in CI), `scripts/dev_setup.py`.
+
+## Planned
+
+- Record the demo video ([shot list](docs/demo-video.md)).
+- An asymmetric token verifier (OIDC / JWKS) as an alternative to the HS256 shared secret.
+
+## Limitations
+
+- **Exfiltration by the client:** the server limits what a principal can read, not what the MCP
+  client does with it afterwards.
+- **HS256 shared secret:** in stdio mode the operator can mint any identity.
+- **No TLS:** use a reverse proxy for anything beyond loopback.
+- More, with the reasoning, in the [threat model](docs/threat-model.md#residual-risks).
+
+## How this was built
+
+I built this with Claude Code, working from my own specification ([CLAUDE.md](CLAUDE.md)) one phase
+at a time. Each phase started as a plan that I reviewed, amended and approved before any code was
+written. I then reviewed the output and the real test runs, and pushed back with changes where
+needed; several of the security fixes came out of that review. I can explain every design decision
+in this repository, and the reasoning is written down in the ADRs.
+
+## License
+
+[MIT](LICENSE)

@@ -149,11 +149,16 @@ docs/                # threat-model.md, decisions/ (ADRs)
 ## 8. Commands (keep this section accurate as the project evolves)
 
 ```
+uv run python scripts/dev_setup.py   # .env if missing (fresh secrets), db up + healthy, migrate, seed
+uv run python scripts/demo.py        # scripted demo (dev only); --pause for recording, --no-color
+# Manual equivalent of dev_setup:
 cp .env.example .env             # then replace every change-me
 docker compose up -d db
 uv sync
 uv run python scripts/migrate.py
 uv run python scripts/seed.py
+# Databases bootstrapped before the set_config revoke (Phase 6), once, as superuser:
+docker compose exec -T db bash -s < db/upgrade/001_revoke_set_config.sh
 uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
 uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only (APP_ENV=dev)

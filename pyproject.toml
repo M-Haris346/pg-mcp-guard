@@ -3,6 +3,8 @@ name = "pg-mcp-guard"
 version = "0.1.0"
 description = "MCP server for read-only SQL on PostgreSQL, where safety is enforced by the database first and a SQL validator second."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.13"
 dependencies = [
     # Exact pins: the MCP SDK defines our protocol surface and pglast's parse
