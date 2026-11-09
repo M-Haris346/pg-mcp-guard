@@ -49,3 +49,16 @@ async def write_audit(pool: Pool, record: AuditRecord, *, acquire_timeout_s: flo
                 record.duration_ms,
             ),
         )
+
+
+AUTH_FAILURE_SQL = (
+    "INSERT INTO audit.tool_calls"
+    " (user_id, tenant_id, tool, sql_text, verdict, reason, row_count, truncated, duration_ms)"
+    " VALUES (NULL, NULL, 'http_auth', NULL, 'rejected', %s, NULL, NULL, 0)"
+)
+
+
+async def write_auth_failure(pool: Pool, reason: str, *, acquire_timeout_s: float) -> None:
+    """Record an HTTP request refused at authentication (no verified principal)."""
+    async with pool.connection(timeout=acquire_timeout_s) as conn:
+        await conn.execute(AUTH_FAILURE_SQL, (reason,))

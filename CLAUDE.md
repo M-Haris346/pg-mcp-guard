@@ -158,6 +158,7 @@ uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
 uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only (APP_ENV=dev)
 MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server   # stdio MCP server; clients: docs/clients.md
+uv run python -m app.server --transport http   # Streamable HTTP, 127.0.0.1:8765/mcp, bearer token per request
 ```
 
 ## 9. How to work in this repo

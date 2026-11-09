@@ -4,18 +4,21 @@
     describe_table(name)  the same for one relation
     run_query(sql)        one validated, read-only, bounded SELECT
 
-Identity: one principal token (JWT) is verified at startup; its expiry is
-re-checked on every call. Tools take SQL or a table name only, never identity,
-and unknown arguments are rejected (and audited), not ignored.
+Identity: stdio verifies one principal token (JWT) at startup and re-checks its
+expiry on every call; HTTP (app/http_transport.py) verifies the bearer token of every
+request. Tools take SQL or a table name only, never identity, and unknown
+arguments are rejected (and audited), not ignored.
 
 Results are untrusted data (rule 10): run_query's text content is fenced and
 labelled, with every "<" escaped inside the fence, so data cannot close it.
 
-Run: uv run python -m app.server   (stdout is the MCP channel; logs go to stderr)
+Run: uv run python -m app.server                    (stdio; logs go to stderr)
+     uv run python -m app.server --transport http   (Streamable HTTP, 127.0.0.1:8765)
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import sys
@@ -23,6 +26,8 @@ import time
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Annotated, Any, Literal
 
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.tools import Tool
@@ -30,7 +35,7 @@ from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp_types import CallToolResult, TextContent, ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
-from app.auth import HS256Verifier, InvalidToken, VerifiedToken
+from app.auth import HS256Verifier, InvalidToken, Principal, VerifiedToken
 from app.catalog import CatalogResult, Relation
 from app.config import Settings
 from app.db import open_pools
@@ -197,11 +202,19 @@ def _audit_text(tool: str, arguments: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
+PrincipalSource = Callable[[], VerifiedToken | None]
+"""Who is asking, for the message being handled right now.
+
+stdio: the token verified at startup (constant). HTTP: the bearer token of the
+current request (app/http_transport.py), never the token that created the session.
+"""
+
+
 class ToolCallGuard:
     """Runs before the SDK validates anything, for every tools/call.
 
     Checks, in order, and audits every refusal:
-    1. the principal token has not expired since startup;
+    1. the principal token (this request's, in HTTP) has not expired;
     2. the arguments match the tool's strict model (no unknown arguments such
        as tenant_id / user_id / role, sql within MAX_SQL_CHARS, right types).
     The tool functions re-validate with the same strict models (defence in depth).
@@ -210,13 +223,13 @@ class ToolCallGuard:
     def __init__(
         self,
         executor: Executor,
-        identity: VerifiedToken,
+        principal_source: PrincipalSource,
         argument_models: Mapping[str, type[BaseModel]],
         clock: Callable[[], float],
         leeway_seconds: int,
     ) -> None:
         self._executor = executor
-        self._identity = identity
+        self._principal_source = principal_source
         self._models = argument_models
         self._clock = clock
         self._leeway = leeway_seconds
@@ -234,9 +247,16 @@ class ToolCallGuard:
         tool: ToolName = name  # type: ignore[assignment]
         arguments = params.get("arguments")
         text = _audit_text(tool, arguments)
-        principal = self._identity.principal
 
-        if self._clock() > self._identity.expires_at + self._leeway:
+        identity = self._principal_source()
+        if identity is None:
+            # Unreachable behind the HTTP auth middleware; refuse rather than guess.
+            # No principal means no audit row can name one; the stderr log records it.
+            log.error("tool_call_without_principal", tool=tool)
+            return error_result("unauthenticated")
+        principal = identity.principal
+
+        if self._clock() > identity.expires_at + self._leeway:
             rejected = await self._executor.reject(principal, tool, text, "principal_token_expired")
             return error_result(rejected.reason)
         try:
@@ -254,12 +274,26 @@ class ToolCallGuard:
 
 def create_server(
     executor: Executor,
-    identity: VerifiedToken,
+    principal: VerifiedToken | PrincipalSource,
     *,
     clock: Callable[[], float] = time.time,
     leeway_seconds: int = 0,
+    token_verifier: TokenVerifier | None = None,
+    auth: AuthSettings | None = None,
 ) -> MCPServer[Any]:
-    principal = identity.principal  # fixed for this process; never from the model
+    """The MCP server. `principal` is a fixed token (stdio) or a per-message source (HTTP).
+
+    token_verifier / auth are the SDK's bearer-auth hooks, used for HTTP only.
+    """
+    if isinstance(principal, VerifiedToken):
+        fixed = principal
+        source: PrincipalSource = lambda: fixed  # noqa: E731
+    else:
+        source = principal
+
+    def current() -> Principal | None:
+        identity = source()  # never from the model: tools take SQL or a name only
+        return None if identity is None else identity.principal
 
     async def run_query(
         sql: Annotated[
@@ -270,12 +304,16 @@ def create_server(
             ),
         ],
     ) -> Annotated[CallToolResult, QueryOutput]:
+        if (principal := current()) is None:
+            return error_result("unauthenticated")
         outcome = await executor.run_query(principal, sql)
         if isinstance(outcome, ToolError):
             return error_result(outcome.reason)
         return query_result(outcome)
 
     async def list_tables() -> Annotated[CallToolResult, TableList]:
+        if (principal := current()) is None:
+            return error_result("unauthenticated")
         outcome = await executor.list_tables(principal)
         if isinstance(outcome, ToolError):
             return error_result(outcome.reason)
@@ -290,6 +328,8 @@ def create_server(
             ),
         ],
     ) -> Annotated[CallToolResult, TableInfo]:
+        if (principal := current()) is None:
+            return error_result("unauthenticated")
         outcome = await executor.describe_table(principal, name)
         if isinstance(outcome, ToolError):
             return error_result(outcome.reason)
@@ -325,12 +365,19 @@ def create_server(
     ]
     guard = ToolCallGuard(
         executor,
-        identity,
+        source,
         {t.name: t.fn_metadata.arg_model for t in tools},
         clock,
         leeway_seconds,
     )
-    return MCPServer(SERVER_NAME, instructions=INSTRUCTIONS, tools=tools, middleware=[guard])
+    return MCPServer(
+        SERVER_NAME,
+        instructions=INSTRUCTIONS,
+        tools=tools,
+        middleware=[guard],
+        token_verifier=token_verifier,
+        auth=auth,
+    )
 
 
 # --- entry point --------------------------------------------------------------------
@@ -379,8 +426,14 @@ async def serve(settings: Settings, identity: VerifiedToken) -> int:
         await pools.close()
 
 
-def main() -> int:
-    configure_logging("INFO")  # stderr only: stdout is the MCP channel
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="python -m app.server")
+    parser.add_argument(
+        "--transport", choices=["stdio", "http"], help="overrides MCP_TRANSPORT (default stdio)"
+    )
+    args = parser.parse_args(argv)
+
+    configure_logging("INFO")  # stderr only: stdout is the MCP channel in stdio mode
     try:
         settings = Settings()
     except ValidationError as exc:
@@ -389,6 +442,11 @@ def main() -> int:
         log.error("startup_failed", reason="invalid_settings", fields=fields)
         return 2
     configure_logging(settings.log_level)
+
+    if (args.transport or settings.mcp_transport) == "http":
+        from app.http_transport import start_http  # here: it imports this module
+
+        return start_http(settings)
 
     verifier = HS256Verifier(
         settings.jwt_secret_bytes(),

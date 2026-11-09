@@ -77,9 +77,23 @@ disabled to show the database holds on its own.
   - In stdio mode whoever runs the server holds the secrets and can mint any identity. The token
     stops the *model* from choosing identity; multi-user trust is Phase 5.
 
+- Phase 5 Streamable HTTP (`app/http_transport.py`,
+  [ADR 0006](docs/decisions/0006-http-transport.md)). It uses the MCP SDK's own bearer-auth path,
+  with tests against a real uvicorn server and the real server process:
+  - the principal comes from the bearer token of **every request**, never from the session or tool
+    arguments. A bad token or a non-member gets a generic 401, audited with its internal reason
+    (rate-limited);
+  - two principals in one process, with concurrent calls, session-id reuse with another token, and
+    the SDK's session-owner check switched off: no cross-tenant rows in any case;
+  - loopback bind by default, with DNS-rebinding protection always on (Host 421, Origin 403);
+  - body limit 256 KiB (413), session cap (503);
+  - cancellation and client disconnects audited as `cancelled`;
+  - no token or Authorization header in the logs, even at DEBUG;
+  - every MCP tool test also runs over HTTP.
+  - No TLS here: put a TLS-terminating reverse proxy in front for remote use.
+
 ## Planned
 
-5. Streamable HTTP with per-request bearer JWT.
 6. Threat model, ADRs, demo.
 
 ## Development
@@ -94,6 +108,7 @@ uv run pytest                    # migrates and seeds its own mcpguard_test data
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
 uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only
 MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server                    # stdio MCP server
+uv run python -m app.server --transport http      # Streamable HTTP on 127.0.0.1:8765/mcp
 ```
 
 To connect Claude Desktop, Claude Code or MCP Inspector, see [docs/clients.md](docs/clients.md).

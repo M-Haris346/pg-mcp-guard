@@ -102,7 +102,28 @@ class Settings(BaseSettings):
 
     # stdio mode: the principal for the whole process. Verified at startup,
     # never logged. Empty or unset means "no principal": the server refuses to start.
+    # Ignored in HTTP mode, where every request carries its own bearer token.
     mcp_principal_token: SecretStr | None = None
+
+    # Transport. "stdio" for a local client; "http" for Streamable HTTP with a
+    # bearer token per request (ADR 0006).
+    mcp_transport: Literal["stdio", "http"] = "stdio"
+    # Loopback by default. Any other address needs MCP_HTTP_ALLOW_REMOTE=true
+    # and explicit allowed Host / Origin lists (JSON lists in the environment).
+    # No TLS here: put a TLS-terminating reverse proxy in front for remote use.
+    mcp_http_host: str = "127.0.0.1"
+    mcp_http_port: int = 8765
+    mcp_http_path: str = "/mcp"
+    mcp_http_allow_remote: bool = False
+    mcp_http_allowed_hosts: list[str] = []
+    mcp_http_allowed_origins: list[str] = []
+    mcp_http_max_body_bytes: int = 256 * 1024
+    mcp_http_max_sessions: int = 100
+    mcp_http_session_idle_s: float = 600.0
+    # Positive membership checks are cached this long (RLS still checks on
+    # every query); the cache holds at most membership_cache_size entries.
+    membership_cache_s: float = 30.0
+    membership_cache_size: int = 1024
 
     @field_validator("mcp_context_key")
     @classmethod
@@ -137,6 +158,16 @@ class Settings(BaseSettings):
             raise ValueError("JWT lifetime must be positive and leeway non-negative")
         if self.pool_open_timeout_s <= 0:
             raise ValueError("POOL_OPEN_TIMEOUT_S must be positive")
+        if not 0 < self.mcp_http_port < 65536:
+            raise ValueError("MCP_HTTP_PORT must be in 1..65535")
+        if self.mcp_http_max_body_bytes <= 0 or self.mcp_http_max_sessions <= 0:
+            raise ValueError("MCP_HTTP_MAX_BODY_BYTES and MCP_HTTP_MAX_SESSIONS must be positive")
+        if self.mcp_http_session_idle_s <= 0:
+            raise ValueError("MCP_HTTP_SESSION_IDLE_S must be positive")
+        if self.membership_cache_s < 0 or self.membership_cache_size <= 0:
+            raise ValueError("membership cache settings must be non-negative / positive")
+        if not self.mcp_http_path.startswith("/"):
+            raise ValueError("MCP_HTTP_PATH must start with /")
         return self
 
     def jwt_secret_bytes(self) -> bytes:

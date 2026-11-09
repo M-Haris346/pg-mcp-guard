@@ -11,21 +11,28 @@ from __future__ import annotations
 
 import asyncio
 import secrets
-from collections.abc import AsyncIterator, Iterator
+import socket
+import time
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
 
 import psycopg
 import pytest
+import uvicorn
 
+from app.auth import HS256Verifier
 from app.config import Limits
 from app.context import sign_context
 from app.db import Pools, make_pool
 from app.executor import Executor, Validator
+from app.http_transport import BearerTokenVerifier, HttpOptions, build_http_app, uvicorn_config
 from app.validator import validate
 from scripts.migrate import apply_migrations, install_context_key
 from scripts.seed import seed
 from tests.db.helpers import DbTestSettings, TokenFactory
+from tests.http_support import AUDIENCE, ISSUER, JWT_SECRET, RunningServer, ServerFactory
 from tests.support import ExecutorFactory
 
 
@@ -130,6 +137,57 @@ async def make_executor(
     yield factory
     for pools in created:
         await pools.close()
+
+
+@pytest.fixture
+def http_server(make_executor: ExecutorFactory) -> ServerFactory:
+    """http_server(...) -> async context manager yielding a RunningServer."""
+
+    @asynccontextmanager
+    async def factory(
+        *,
+        validator: Validator = validate,
+        limits: Limits | None = None,
+        reader_max: int = 2,
+        auditor_url: str | None = None,
+        membership_cache_s: float = 30.0,
+        clock: Callable[[], float] = time.time,
+        **options: Any,
+    ) -> AsyncIterator[RunningServer]:
+        executor = await make_executor(
+            validator=validator, limits=limits, reader_max=reader_max, auditor_url=auditor_url
+        )
+        verifier = BearerTokenVerifier(
+            HS256Verifier(JWT_SECRET, issuer=ISSUER, audience=AUDIENCE, leeway_seconds=0),
+            executor.is_member,
+            issuer=ISSUER,
+            leeway_seconds=0,
+            cache_seconds=membership_cache_s,
+        )
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        http_options = HttpOptions(host="127.0.0.1", port=port, **options)
+        app = build_http_app(executor, verifier, http_options, leeway_seconds=0, clock=clock)
+        server = uvicorn.Server(uvicorn_config(app, http_options))
+        task = asyncio.create_task(server.serve(sockets=[sock]))
+        try:
+            while not server.started:
+                if task.done():
+                    task.result()  # surface a startup error
+                await asyncio.sleep(0.01)
+            yield RunningServer(
+                url=f"http://127.0.0.1:{port}{http_options.path}",
+                port=port,
+                executor=executor,
+                verifier=verifier,
+            )
+        finally:
+            server.should_exit = True
+            await asyncio.wait_for(task, timeout=15)
+            sock.close()
+
+    return factory
 
 
 def pytest_asyncio_loop_factories(config: pytest.Config, item: pytest.Item) -> dict[str, Any]:

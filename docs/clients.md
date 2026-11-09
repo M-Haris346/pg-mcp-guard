@@ -74,3 +74,34 @@ npx @modelcontextprotocol/inspector -e MCP_PRINCIPAL_TOKEN=<token> uv run --dire
   the server wrote to stderr (`"event": "startup_failed"`), e.g.
   `invalid_principal_token: expired` or `principal_not_a_member`. Claude Desktop keeps it in its MCP
   log file.
+
+# Connecting over Streamable HTTP
+
+In HTTP mode one server process serves many callers. **Every request carries its own bearer
+token**, and only the server holds `JWT_SECRET` and the database credentials (ADR 0006).
+`MCP_PRINCIPAL_TOKEN` is ignored in this mode.
+
+```
+uv run python -m app.server --transport http        # listens on http://127.0.0.1:8765/mcp
+```
+
+- **Loopback only by default.** Binding another address needs `MCP_HTTP_HOST`,
+  `MCP_HTTP_ALLOW_REMOTE=true`, `MCP_HTTP_ALLOWED_HOSTS='["mcp.example.com:443"]'` and
+  `MCP_HTTP_ALLOWED_ORIGINS='["https://app.example.com"]'`. Without them the server refuses to
+  start.
+- **No TLS here.** For anything beyond loopback, put a TLS-terminating reverse proxy in front;
+  otherwise tokens cross the network in clear text.
+- **Every request needs** `Authorization: Bearer <token>`. A missing, expired or invalid token
+  gets a generic `401` (the reason is in the server's audit log, not in the response). The same
+  happens for a user who is not a member of the token's tenant.
+
+Clients that support Streamable HTTP with a static bearer header can point at the URL. Claude Code:
+
+```
+claude mcp add --transport http pg-mcp-guard http://127.0.0.1:8765/mcp --header "Authorization: Bearer <token>"
+```
+
+MCP Inspector: choose transport "Streamable HTTP", URL `http://127.0.0.1:8765/mcp`, and add the
+`Authorization: Bearer <token>` header.
+
+The same caution applies: a token in a client config is plain text. Mint short TTLs.
