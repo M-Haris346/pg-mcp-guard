@@ -8,7 +8,7 @@ import json
 from app.config import Limits
 from app.executor import QueryResult, ToolError
 from scripts.seed import ACME, ORDERS
-from tests.executor.conftest import ALICE_AT_ACME, ExecutorFactory
+from tests.support import ALICE_AT_ACME, ExecutorFactory
 
 SIX_ROWS_LAST_DIVIDES_BY_ZERO = "SELECT 1 / x FROM (VALUES (1), (1), (1), (1), (1), (0)) AS v(x)"
 

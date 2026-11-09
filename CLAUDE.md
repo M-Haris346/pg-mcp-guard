@@ -156,7 +156,8 @@ uv run python scripts/migrate.py
 uv run python scripts/seed.py
 uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
-uv run python -m app.server      # stdio MCP server (for Claude Desktop / Claude Code / MCP Inspector)
+uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only (APP_ENV=dev)
+MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server   # stdio MCP server; clients: docs/clients.md
 ```
 
 ## 9. How to work in this repo

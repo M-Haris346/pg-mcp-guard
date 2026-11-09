@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.executor import Executor, QueryResult
-from tests.executor.conftest import ALICE_AT_ACME, ExecutorFactory, allow_all
+from tests.support import ALICE_AT_ACME, ExecutorFactory, allow_all
 
 LEAVE_STATE_BEHIND = (
     "SELECT pg_backend_pid(), set_config('statement_timeout', '0', false),"

@@ -11,7 +11,7 @@ import pytest
 
 from app.executor import QueryResult, ToolError
 from scripts.seed import ACME, ALICE
-from tests.executor.conftest import ALICE_AT_ACME, ExecutorFactory, allow_all
+from tests.support import ALICE_AT_ACME, ExecutorFactory, allow_all
 
 
 async def test_transaction_local_settings(make_executor: ExecutorFactory) -> None:

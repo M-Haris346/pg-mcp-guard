@@ -10,7 +10,7 @@ from app.config import Limits
 from app.executor import QueryResult, ToolError
 from scripts.seed import ACME, ALICE
 from tests.db.helpers import DbTestSettings
-from tests.executor.conftest import (
+from tests.support import (
     ALICE_AT_ACME,
     UNREACHABLE_URL,
     ExecutorFactory,

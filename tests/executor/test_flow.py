@@ -9,7 +9,7 @@ from typing import Any
 from app.executor import QueryResult, ToolError
 from app.validator import Verdict, validate
 from scripts.seed import ACME, GLOBEX, ORDERS
-from tests.executor.conftest import ALICE_AT_ACME, BOB_AT_GLOBEX, ExecutorFactory, last_audit
+from tests.support import ALICE_AT_ACME, BOB_AT_GLOBEX, ExecutorFactory, last_audit
 
 
 async def test_allowed_query_returns_only_the_principals_rows(

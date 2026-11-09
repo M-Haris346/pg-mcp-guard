@@ -108,8 +108,12 @@ async def open_pools(settings: Settings) -> Pools:
             read_only=False,
         ),
     )
-    await pools.reader.open(wait=True)
-    await pools.auditor.open(wait=True)
+    try:
+        await pools.reader.open(wait=True, timeout=settings.pool_open_timeout_s)
+        await pools.auditor.open(wait=True, timeout=settings.pool_open_timeout_s)
+    except BaseException:
+        await pools.close()
+        raise
     return pools
 
 

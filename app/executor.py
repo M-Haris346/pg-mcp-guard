@@ -23,12 +23,12 @@ import asyncio
 import json
 import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from datetime import time as dt_time
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal, TypeVar
 from uuid import UUID
 
 import psycopg
@@ -37,10 +37,11 @@ from psycopg_pool import PoolTimeout
 
 from app.audit import AuditRecord, Verdict, write_audit
 from app.auth import Principal
+from app.catalog import CATALOG_SQL, CatalogResult, allowlisted_name, relations_from_rows
 from app.config import Limits
 from app.db import Conn, Pools, read_only_transaction
 from app.log import get_logger
-from app.validator import DEFAULT_POLICY
+from app.validator import DEFAULT_POLICY, Policy, clean_detail
 from app.validator import Verdict as ValidatorVerdict
 from app.validator import validate as default_validate
 
@@ -49,8 +50,9 @@ log = get_logger("executor")
 JSONValue = None | bool | int | float | str | list["JSONValue"]
 Validator = Callable[[str], ValidatorVerdict]
 
-# Name of the task that runs the database work; tests use it to check that the
-# task has finished before the connection goes back to the pool.
+# Name of the task that runs the database work (model SQL or a catalog
+# lookup); tests use it to check that the task has finished before the
+# connection goes back to the pool.
 QUERY_TASK_NAME = "mcp-query"
 AUDIT_TASK_NAME = "mcp-audit"
 CURSOR_NAME = "mcp_query"
@@ -96,36 +98,98 @@ class _Timeout(Exception):
     """Raised when the client-side deadline (or its backstop) ended the query."""
 
 
+Outcome = TypeVar("Outcome", QueryResult, CatalogResult)
+Result = TypeVar("Result")
+Tool = Literal["list_tables", "describe_table", "run_query"]
+
+
 @dataclass
 class Executor:
     pools: Pools
     context_key: bytes
     limits: Limits = field(default_factory=Limits)
     validator: Validator = default_validate
+    # The relation allowlist list_tables / describe_table expose. The validator
+    # (possibly a test stub) is a separate callable.
+    policy: Policy = DEFAULT_POLICY
+
+    # --- tools ----------------------------------------------------------------
 
     async def run_query(self, principal: Principal, sql: str) -> QueryResult | ToolError:
         """Validate, execute, audit. Never raises, except CancelledError when the
         caller cancels (MCP notifications/cancelled, HTTP disconnect); even then
         the call is audited first, with reason "cancelled"."""
+        return await self._audited(
+            principal, "run_query", sql, lambda: self._check_and_execute(principal, sql)
+        )
+
+    async def list_tables(self, principal: Principal) -> CatalogResult | ToolError:
+        names = sorted(self.policy.relations)
+
+        async def work() -> tuple[CatalogResult | ToolError, Verdict]:
+            return _verdict(
+                await self._with_reader(lambda conn: self._catalog(conn, principal, names))
+            )
+
+        return await self._audited(principal, "list_tables", None, work)
+
+    async def describe_table(self, principal: Principal, name: str) -> CatalogResult | ToolError:
+        relname = allowlisted_name(name, self.policy.schema, self.policy.relations)
+
+        async def work() -> tuple[CatalogResult | ToolError, Verdict]:
+            if relname is None:
+                return ToolError(f"relation_not_allowed: {clean_detail(name)}"), "rejected"
+            return _verdict(
+                await self._with_reader(lambda conn: self._catalog(conn, principal, [relname]))
+            )
+
+        return await self._audited(principal, "describe_table", name, work)
+
+    async def reject(
+        self, principal: Principal, tool: Tool, text: str | None, reason: str
+    ) -> ToolError:
+        """Audit a call refused before it reached a tool (e.g. bad arguments)."""
+
+        async def work() -> tuple[QueryResult | ToolError, Verdict]:
+            return ToolError(reason), "rejected"
+
+        outcome = await self._audited(principal, tool, text, work)
+        return outcome if isinstance(outcome, ToolError) else ToolError(reason)
+
+    async def is_member(self, principal: Principal) -> bool | ToolError:
+        """Startup probe: does the signed context resolve to a tenant (membership)?"""
+        return await self._with_reader(lambda conn: self._member(conn, principal))
+
+    # --- auditing -------------------------------------------------------------
+
+    async def _audited(
+        self,
+        principal: Principal,
+        tool: Tool,
+        text: str | None,
+        work: Callable[[], Awaitable[tuple[Outcome | ToolError, Verdict]]],
+    ) -> Outcome | ToolError:
+        """Run work(), then audit it (also when cancelled), failing closed."""
         started = time.monotonic()
-        outcome: QueryResult | ToolError
+        outcome: Outcome | ToolError
         verdict: Verdict
         cancelled: asyncio.CancelledError | None = None
 
         try:
-            outcome, verdict = await self._check_and_execute(principal, sql)
+            outcome, verdict = await work()
         except asyncio.CancelledError as exc:
             cancelled = exc
             outcome, verdict = ToolError("cancelled"), "error"
 
+        reason, row_count, truncated = _audit_fields(outcome)
         record = AuditRecord(
             principal=principal,
-            tool="run_query",
-            sql_text=audit_sql_text(sql),
+            tool=tool,
+            sql_text=None if text is None else audit_sql_text(text),
             verdict=verdict,
-            reason=outcome.reason if isinstance(outcome, ToolError) else outcome.truncated_reason,
-            row_count=outcome.row_count if isinstance(outcome, QueryResult) else None,
-            truncated=outcome.truncated if isinstance(outcome, QueryResult) else None,
+            reason=reason,
+            row_count=row_count,
+            truncated=truncated,
             duration_ms=int((time.monotonic() - started) * 1000),
         )
         audited, cancelled_during_audit = await self._audit(record)
@@ -148,14 +212,13 @@ class Executor:
 
         if not check.allowed:
             return ToolError(check.reason or "rejected"), "rejected"
-        outcome = await self._execute(principal, sql)
-        return outcome, ("allowed" if isinstance(outcome, QueryResult) else "error")
+        return _verdict(await self._with_reader(lambda conn: self._query(conn, principal, sql)))
 
     async def _audit(self, record: AuditRecord) -> tuple[bool, asyncio.CancelledError | None]:
         """Write the audit row even if the caller cancels us meanwhile.
 
         The write runs in its own task behind asyncio.shield, so a cancellation
-        of run_query does not abort it. It is bounded by the pool acquire
+        of the tool call does not abort it. It is bounded by the pool acquire
         timeout plus a margin over the auditor role's 2 s statement_timeout.
         Returns (written, the CancelledError that arrived meanwhile, if any).
         """
@@ -190,12 +253,15 @@ class Executor:
 
     # --- execution ----------------------------------------------------------
 
-    async def _execute(self, principal: Principal, sql: str) -> QueryResult | ToolError:
+    async def _with_reader(
+        self, fn: Callable[[Conn], Coroutine[Any, Any, Result]]
+    ) -> Result | ToolError:
+        """Run fn on a pooled reader connection, under the deadline rules."""
         try:
             async with self.pools.reader.connection(
                 timeout=self.limits.pool_acquire_timeout_s
             ) as conn:
-                return await self._run_with_deadline(conn, principal, sql)
+                return await self._run_with_deadline(conn, fn)
         except _Timeout:
             return ToolError("query_timeout")
         except PoolTimeout:
@@ -204,9 +270,9 @@ class Executor:
             return ToolError(map_db_error(exc))
 
     async def _run_with_deadline(
-        self, conn: Conn, principal: Principal, sql: str
-    ) -> QueryResult | ToolError:
-        """Run the query in a child task and police the deadline from here.
+        self, conn: Conn, fn: Callable[[Conn], Coroutine[Any, Any, Result]]
+    ) -> Result | ToolError:
+        """Run the database work in a child task and police the deadline from here.
 
         The task is always finished (or the connection closed under it) before
         this returns, so nothing is still running when the connection goes back
@@ -214,7 +280,7 @@ class Executor:
         never reused: a cancel request that arrives late would hit whatever the
         backend runs next (the next principal's query, or DISCARD ALL).
         """
-        work = asyncio.create_task(self._query(conn, principal, sql), name=QUERY_TASK_NAME)
+        work = asyncio.create_task(fn(conn), name=QUERY_TASK_NAME)
         fired = False
         try:
             try:
@@ -251,7 +317,7 @@ class Executor:
             if fired and not conn.closed:
                 await conn.close()  # the pool discards closed connections
 
-    async def _stop(self, conn: Conn, work: asyncio.Task[QueryResult]) -> None:
+    async def _stop(self, conn: Conn, work: asyncio.Task[Any]) -> None:
         """Deadline passed: cancel on the server, then the hard backstop."""
         loop = asyncio.get_running_loop()
         grace_end = loop.time() + self.limits.cancel_grace_ms / 1000
@@ -285,6 +351,20 @@ class Executor:
                 await cursor.execute(sql)
                 columns = [col.name for col in cursor.description or ()]
                 return await self._fetch(cursor, columns)
+
+    async def _catalog(self, conn: Conn, principal: Principal, names: list[str]) -> CatalogResult:
+        # Trusted SQL (app/catalog.py), not model SQL. The result is bounded by
+        # the allowlist: a handful of relations and their columns.
+        async with read_only_transaction(conn, principal, self.context_key, self.limits):
+            cursor = await conn.execute(CATALOG_SQL, (self.policy.schema, names))
+            rows = await cursor.fetchall()
+        return CatalogResult(relations=relations_from_rows(rows))
+
+    async def _member(self, conn: Conn, principal: Principal) -> bool:
+        async with read_only_transaction(conn, principal, self.context_key, self.limits):
+            cursor = await conn.execute("SELECT private.current_tenant_id() IS NOT NULL")
+            row = await cursor.fetchone()
+        return bool(row and row[0])
 
     async def _fetch(
         self, cursor: psycopg.AsyncServerCursor[tuple[Any, ...]], columns: list[str]
@@ -355,7 +435,22 @@ def _sever(conn: Conn) -> None:
     conn.pgconn.finish()
 
 
-def _consume(task: asyncio.Task[QueryResult]) -> None:
+def _verdict[T](outcome: T | ToolError) -> tuple[T | ToolError, Verdict]:
+    return outcome, ("error" if isinstance(outcome, ToolError) else "allowed")
+
+
+def _audit_fields(outcome: object) -> tuple[str | None, int | None, bool | None]:
+    """(reason, row_count, truncated) for the audit row."""
+    if isinstance(outcome, ToolError):
+        return outcome.reason, None, None
+    if isinstance(outcome, QueryResult):
+        return outcome.truncated_reason, outcome.row_count, outcome.truncated
+    if isinstance(outcome, CatalogResult):
+        return None, len(outcome.relations), False
+    return None, None, None
+
+
+def _consume(task: asyncio.Task[Any]) -> None:
     """Retrieve a finished task's exception so asyncio does not log it as unhandled."""
     if not task.cancelled():
         task.exception()

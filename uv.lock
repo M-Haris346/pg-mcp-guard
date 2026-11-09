@@ -395,6 +395,7 @@ dependencies = [
     { name = "pglast" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic-settings" },
+    { name = "pyjwt" },
     { name = "structlog" },
 ]
 
@@ -412,6 +413,7 @@ requires-dist = [
     { name = "pglast", specifier = "==8.7" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.3" },
     { name = "pydantic-settings", specifier = ">=2.16" },
+    { name = "pyjwt", specifier = ">=2.15" },
     { name = "structlog", specifier = ">=26.1" },
 ]
 

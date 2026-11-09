@@ -9,7 +9,7 @@ import pytest
 
 from app.config import Limits
 from app.executor import QueryResult, ToolError
-from tests.executor.conftest import (
+from tests.support import (
     ALICE_AT_ACME,
     UNREACHABLE_URL,
     ExecutorFactory,

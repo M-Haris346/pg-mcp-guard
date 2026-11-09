@@ -21,7 +21,7 @@ from app import executor as executor_module
 from app.audit import AuditRecord
 from app.db import Pool
 from app.executor import AUDIT_TASK_NAME, QUERY_TASK_NAME, Executor, QueryResult
-from tests.executor.conftest import ALICE_AT_ACME, ExecutorFactory, allow_all, last_audit
+from tests.support import ALICE_AT_ACME, ExecutorFactory, allow_all, last_audit
 
 
 async def _pid(executor: Executor) -> int:

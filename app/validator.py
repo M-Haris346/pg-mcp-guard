@@ -240,10 +240,10 @@ class Verdict:
 class _Rejected(Exception):
     def __init__(self, code: str, detail: str | None = None) -> None:
         super().__init__(code)
-        self.reason = code if detail is None else f"{code}: {_clean(detail)}"
+        self.reason = code if detail is None else f"{code}: {clean_detail(detail)}"
 
 
-def _clean(detail: str) -> str:
+def clean_detail(detail: str) -> str:
     """Make a detail safe to show the model: printable, short."""
     printable = "".join(ch for ch in detail if ch.isprintable())
     return printable[:_MAX_DETAIL]

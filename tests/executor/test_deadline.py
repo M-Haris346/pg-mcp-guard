@@ -14,7 +14,7 @@ import pytest
 from app.config import Limits
 from app.executor import QUERY_TASK_NAME, Executor, QueryResult, ToolError
 from scripts.seed import GLOBEX
-from tests.executor.conftest import ALICE_AT_ACME, BOB_AT_GLOBEX, ExecutorFactory, allow_all
+from tests.support import ALICE_AT_ACME, BOB_AT_GLOBEX, ExecutorFactory, allow_all
 
 # Server-side timeout far away, so only the client-side deadline can fire.
 DEADLINE_FIRST = Limits(statement_timeout_ms=30_000, deadline_ms=1000, cancel_grace_ms=2000)

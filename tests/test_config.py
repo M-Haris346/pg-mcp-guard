@@ -6,16 +6,18 @@ from pydantic import ValidationError
 from app.config import Limits, Settings
 
 VALID_KEY = "ab" * 32  # 32 bytes, hex
+VALID_JWT_SECRET = "j" * 32
 
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Isolate from the developer's shell; _env_file=None below ignores .env.
-    for var in ("APP_ENV", "LOG_LEVEL"):
+    for var in ("APP_ENV", "LOG_LEVEL", "MCP_PRINCIPAL_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("READER_DATABASE_URL", "postgresql://r:p@localhost/db")
     monkeypatch.setenv("AUDITOR_DATABASE_URL", "postgresql://a:p@localhost/db")
     monkeypatch.setenv("MCP_CONTEXT_KEY", VALID_KEY)
+    monkeypatch.setenv("JWT_SECRET", VALID_JWT_SECRET)
 
 
 def _settings() -> Settings:
@@ -56,15 +58,34 @@ def test_rejects_weak_context_key(
         _settings()
 
 
-@pytest.mark.parametrize("var", ["READER_DATABASE_URL", "AUDITOR_DATABASE_URL", "MCP_CONTEXT_KEY"])
+@pytest.mark.parametrize(
+    "var", ["READER_DATABASE_URL", "AUDITOR_DATABASE_URL", "MCP_CONTEXT_KEY", "JWT_SECRET"]
+)
 def test_required_values_have_no_default(monkeypatch: pytest.MonkeyPatch, var: str) -> None:
     monkeypatch.delenv(var)
     with pytest.raises(ValidationError):
         _settings()
 
 
-def test_secrets_are_not_in_repr() -> None:
-    assert VALID_KEY not in repr(_settings())
+def test_secrets_are_not_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCP_PRINCIPAL_TOKEN", "a.principal.token")
+    shown = repr(_settings())
+    assert VALID_KEY not in shown
+    assert VALID_JWT_SECRET not in shown
+    assert "a.principal.token" not in shown
+
+
+def test_jwt_defaults() -> None:
+    settings = _settings()
+    assert (settings.jwt_issuer, settings.jwt_audience) == ("pg-mcp-guard", "pg-mcp-guard")
+    assert settings.jwt_max_lifetime_seconds == 12 * 3600
+    assert settings.mcp_principal_token is None
+
+
+def test_short_jwt_secret_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("JWT_SECRET", "j" * 31)
+    with pytest.raises(ValidationError, match="JWT_SECRET must be at least 32 bytes"):
+        _settings()
 
 
 def test_default_limits() -> None:
@@ -87,6 +108,8 @@ def test_default_limits() -> None:
         ({"QUERY_CANCEL_GRACE_MS": "0"}, "cancel_grace_ms must be positive"),
         ({"READER_POOL_MAX": "10"}, "READER_POOL_MAX"),
         ({"AUDITOR_POOL_MAX": "0"}, "AUDITOR_POOL_MAX"),
+        ({"JWT_MAX_LIFETIME_SECONDS": "0"}, "JWT lifetime must be positive"),
+        ({"POOL_OPEN_TIMEOUT_S": "0"}, "POOL_OPEN_TIMEOUT_S must be positive"),
     ],
 )
 def test_rejects_inconsistent_limits(

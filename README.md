@@ -63,9 +63,22 @@ disabled to show the database holds on its own.
   - database errors mapped to model-readable reasons with no internals;
   - an audit row for every call; if the audit write fails, no result is returned.
 
+- Phase 4 MCP server over stdio (`app/server.py`,
+  [ADR 0005](docs/decisions/0005-mcp-server.md), client setup in [docs/clients.md](docs/clients.md)).
+  Tested through the SDK's in-memory client and as a real subprocess over stdio:
+  - three read-only tools: `list_tables`, `describe_table`, `run_query`;
+  - the principal comes from a JWT verified at startup (HS256, required claims, maximum lifetime)
+    and its expiry is re-checked on every call. The server refuses to start on a bad token, an
+    unreachable database or a user who is not a member of the tenant;
+  - tool inputs are strict: identity arguments such as `tenant_id` are rejected and audited;
+  - results are labelled as untrusted data, in a fence that neither data nor column aliases can
+    close;
+  - exact error reasons, MCP cancellation reaching the database, and logs on stderr only.
+  - In stdio mode whoever runs the server holds the secrets and can mint any identity. The token
+    stops the *model* from choosing identity; multi-user trust is Phase 5.
+
 ## Planned
 
-4. MCP server over stdio: `list_tables`, `describe_table`, `run_query`.
 5. Streamable HTTP with per-request bearer JWT.
 6. Threat model, ADRs, demo.
 
@@ -79,4 +92,8 @@ uv run python scripts/migrate.py
 uv run python scripts/seed.py
 uv run pytest                    # migrates and seeds its own mcpguard_test database
 uv run ruff check . && uv run ruff format --check . && uv run mypy app
+uv run python -m scripts.mint_token --user alice --tenant acme --ttl 1h   # dev only
+MCP_PRINCIPAL_TOKEN=<token> uv run python -m app.server                    # stdio MCP server
 ```
+
+To connect Claude Desktop, Claude Code or MCP Inspector, see [docs/clients.md](docs/clients.md).

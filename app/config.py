@@ -89,6 +89,20 @@ class Settings(BaseSettings):
     # Must stay below the roles' CONNECTION LIMITs.
     reader_pool_max: int = 4
     auditor_pool_max: int = 2
+    # How long startup waits for the pools' first connections.
+    pool_open_timeout_s: float = 10.0
+
+    # Principal tokens (app/auth.py, ADR 0005). HS256 shared secret: demo only.
+    jwt_secret: SecretStr
+    jwt_issuer: str = "pg-mcp-guard"
+    jwt_audience: str = "pg-mcp-guard"
+    jwt_leeway_seconds: int = 30
+    # exp - iat may not exceed this, however the token was signed.
+    jwt_max_lifetime_seconds: int = 12 * 3600
+
+    # stdio mode: the principal for the whole process. Verified at startup,
+    # never logged. Empty or unset means "no principal": the server refuses to start.
+    mcp_principal_token: SecretStr | None = None
 
     @field_validator("mcp_context_key")
     @classmethod
@@ -99,6 +113,13 @@ class Settings(BaseSettings):
             raise ValueError("MCP_CONTEXT_KEY must be hex") from None
         if len(raw) < MIN_KEY_BYTES:
             raise ValueError(f"MCP_CONTEXT_KEY must be at least {MIN_KEY_BYTES} bytes")
+        return value
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _jwt_secret_long_enough(cls, value: SecretStr) -> SecretStr:
+        if len(value.get_secret_value().encode()) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 bytes")
         return value
 
     @model_validator(mode="after")
@@ -112,7 +133,14 @@ class Settings(BaseSettings):
             raise ValueError(f"READER_POOL_MAX must be in 1..{READER_CONNECTION_LIMIT - 1}")
         if not 1 <= self.auditor_pool_max < AUDITOR_CONNECTION_LIMIT:
             raise ValueError(f"AUDITOR_POOL_MAX must be in 1..{AUDITOR_CONNECTION_LIMIT - 1}")
+        if self.jwt_max_lifetime_seconds <= 0 or self.jwt_leeway_seconds < 0:
+            raise ValueError("JWT lifetime must be positive and leeway non-negative")
+        if self.pool_open_timeout_s <= 0:
+            raise ValueError("POOL_OPEN_TIMEOUT_S must be positive")
         return self
+
+    def jwt_secret_bytes(self) -> bytes:
+        return self.jwt_secret.get_secret_value().encode()
 
     def context_key_bytes(self) -> bytes:
         return bytes.fromhex(self.mcp_context_key.get_secret_value())
