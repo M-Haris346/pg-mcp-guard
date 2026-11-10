@@ -3,6 +3,12 @@
 [![CI](https://github.com/M-Haris346/pg-mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/M-Haris346/pg-mcp-guard/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+
+**Demo video (3 min):** the real server driven by a real MCP client: RLS, column grants, the `COMMIT; DROP` attack, a prompt-injection row and the audit log.
+
+[![Watch the demo](https://img.youtube.com/vi/3TNNtByp2D8/hqdefault.jpg)](https://youtu.be/3TNNtByp2D8)
+
+
 An MCP server that lets an LLM agent run read-only SQL against PostgreSQL, where safety is enforced
 by the database first and by a SQL validator second, never by the prompt. The tests prove that a
 model can only read rows and columns its principal may read, cannot change anything, cannot exhaust
